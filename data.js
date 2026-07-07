@@ -119,11 +119,207 @@ const Data = (() => {
     notify();
   }
 
+  const EDGE_JUNK_RE = /^[\s\uFEFF\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069]+|[\s\uFEFF\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069]+$/g;
+  const WRAPPER_QUOTES = {
+    "'": "'",
+    '"': '"',
+    "`": "`",
+    "\u2018": "\u2019",
+    "\u2019": "\u2019",
+    "\u201C": "\u201D",
+    "\u201D": "\u201D"
+  };
+
+  function cleanClipboardEdges(value) {
+    return String(value ?? "").replace(/\r\n?/g, "\n").replace(EDGE_JUNK_RE, "");
+  }
+
+  function previewText(value) {
+    const oneLine = cleanClipboardEdges(value).replace(/\s+/g, " ");
+    const short = oneLine.length > 120 ? oneLine.slice(0, 120) + "..." : oneLine;
+    return JSON.stringify(short);
+  }
+
+  function stripMarkdownFence(value) {
+    const text = cleanClipboardEdges(value);
+    const m = text.match(/^```[^\n]*\n([\s\S]*?)\n?```\s*$/);
+    return m ? cleanClipboardEdges(m[1]) : null;
+  }
+
+  function unwrapPayloadQuotes(value) {
+    let text = cleanClipboardEdges(value);
+    let changed = false;
+    for (let i = 0; i < 3 && text.length >= 2; i++) {
+      const first = text[0];
+      const expectedLast = WRAPPER_QUOTES[first];
+      if (!expectedLast || text[text.length - 1] !== expectedLast) break;
+      const inner = cleanClipboardEdges(text.slice(1, -1));
+      const unfenced = stripMarkdownFence(inner) || inner;
+      if (!/^[\[{]/.test(cleanClipboardEdges(unfenced)) && !/^```/.test(inner)) break;
+      text = inner;
+      changed = true;
+    }
+    return changed ? text : null;
+  }
+
+  function decodeCommonHtmlEntities(value) {
+    const text = cleanClipboardEdges(value);
+    if (!/&(?:quot|apos|amp|lt|gt|#(?:34|39|x22|x27));/i.test(text)) return null;
+    return text.replace(/&(?:quot|apos|amp|lt|gt|#(?:34|39|x22|x27));/gi, entity => {
+      const key = entity.toLowerCase();
+      if (key === "&quot;" || key === "&#34;" || key === "&#x22;") return '"';
+      if (key === "&apos;" || key === "&#39;" || key === "&#x27;") return "'";
+      if (key === "&lt;") return "<";
+      if (key === "&gt;") return ">";
+      return "&";
+    });
+  }
+
+  function decodeLikelyUrlText(value) {
+    const text = cleanClipboardEdges(value);
+    const fragment = text.match(/(?:^|[?#&])(?:text|json|data|payload)=([^#&]+)/i);
+    const encoded = fragment ? fragment[1] : text;
+    if (!/%(?:5b|5d|7b|7d|22|27)/i.test(encoded)) return null;
+    try {
+      return cleanClipboardEdges(decodeURIComponent(encoded.replace(/\+/g, " ")));
+    } catch {
+      return null;
+    }
+  }
+
+  function matchingCloser(ch) {
+    return ch === "[" ? "]" : ch === "{" ? "}" : "";
+  }
+
+  function balancedJsonEnd(text, start) {
+    const stack = [matchingCloser(text[start])];
+    let inString = false;
+    let escaped = false;
+    for (let i = start + 1; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "[" || ch === "{") stack.push(matchingCloser(ch));
+      else if (ch === "]" || ch === "}") {
+        if (ch !== stack[stack.length - 1]) return -1;
+        stack.pop();
+        if (stack.length === 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  function extractFirstJsonPayload(value) {
+    const text = cleanClipboardEdges(value);
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] !== "[" && text[i] !== "{") continue;
+      const end = balancedJsonEnd(text, i);
+      if (end !== -1) return cleanClipboardEdges(text.slice(i, end + 1));
+    }
+    return null;
+  }
+
+  function singleQuotedJsonishToJson(value) {
+    const text = cleanClipboardEdges(value);
+    if (!text.includes("'") || !/[\[{]/.test(text)) return null;
+    let out = "";
+    let inDouble = false;
+    let escaped = false;
+    let changed = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inDouble) {
+        out += ch;
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inDouble = false;
+        continue;
+      }
+      if (ch === '"') {
+        inDouble = true;
+        out += ch;
+        continue;
+      }
+      if (ch !== "'") {
+        out += ch;
+        continue;
+      }
+
+      let chunk = "";
+      let closed = false;
+      for (i = i + 1; i < text.length; i++) {
+        const inner = text[i];
+        if (inner === "\\") {
+          const next = text[++i];
+          if (next == null) return null;
+          if (next === "'" || next === "\\") chunk += next;
+          else if (next === "n") chunk += "\n";
+          else if (next === "r") chunk += "\r";
+          else if (next === "t") chunk += "\t";
+          else chunk += "\\" + next;
+        } else if (inner === "'") {
+          closed = true;
+          break;
+        } else {
+          chunk += inner;
+        }
+      }
+      if (!closed) return null;
+      out += JSON.stringify(chunk);
+      changed = true;
+    }
+    return changed ? out : null;
+  }
+
   function parseText(text) {
-    const trimmed = text.trim();
-    const parsed = trimmed === "" ? [] : JSON.parse(trimmed);
-    if (!Array.isArray(parsed)) throw new Error("JSON root must be an array of investments.");
-    return parsed;
+    const received = String(text ?? "");
+    const candidates = [];
+    const seen = new Set();
+    const addCandidate = (value) => {
+      const cleaned = cleanClipboardEdges(value);
+      if (seen.has(cleaned)) return;
+      seen.add(cleaned);
+      candidates.push(cleaned);
+    };
+
+    addCandidate(received);
+    let syntaxError = null;
+    let rootError = null;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      if (candidate === "") {
+        if (cleanClipboardEdges(received) === "") return [];
+        continue;
+      }
+
+      [stripMarkdownFence, unwrapPayloadQuotes, decodeCommonHtmlEntities, decodeLikelyUrlText, extractFirstJsonPayload, singleQuotedJsonishToJson]
+        .forEach(fn => {
+          const next = fn(candidate);
+          if (next != null) addCandidate(next);
+        });
+
+      try {
+        const parsed = JSON.parse(candidate);
+        if (typeof parsed === "string") {
+          addCandidate(parsed);
+          continue;
+        }
+        if (Array.isArray(parsed)) return parsed;
+        rootError = new Error("JSON root must be an array of investments.");
+      } catch (err) {
+        if (!syntaxError) syntaxError = err;
+      }
+    }
+
+    const sanitized = candidates[candidates.length - 1] || cleanClipboardEdges(received);
+    const reason = rootError ? rootError.message : (syntaxError && syntaxError.message) || "invalid JSON";
+    throw new Error(`couldn't parse portfolio JSON (${reason}). Received ${previewText(received)}; sanitized ${previewText(sanitized)}`);
   }
 
   function loadText(text) {
@@ -157,6 +353,43 @@ const Data = (() => {
     return inv["Kind"] === "Debt"
       && inv["Amort Months"] !== "" && Number(inv["Amort Months"]) > 0
       && inv["Amort Payment"] !== "" && Number(inv["Amort Payment"]) > 0;
+  }
+
+  function amortMonths(inv) {
+    return Math.max(1, Math.round(Number(inv["Amort Months"]) || 0));
+  }
+
+  function fullyAmortizingPayment(balance, monthlyRate, months) {
+    if (balance <= 0 || months <= 0) return 0;
+    if (Math.abs(monthlyRate) < 1e-12) return balance / months;
+    const required = balance * monthlyRate / (1 - Math.pow(1 + monthlyRate, -months));
+    return Number.isFinite(required) && required > 0 ? required : balance / months;
+  }
+
+  function roundCurrency(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function inferAmortPayment(principal, annualRate, months) {
+    const balance = Math.max(0, Number(principal) || 0);
+    const term = Math.round(Number(months) || 0);
+    if (balance <= 0 || term <= 0) return "";
+    return roundCurrency(fullyAmortizingPayment(balance, (Number(annualRate) || 0) / 12, term));
+  }
+
+  function amortizedMagnitudeSchedule(balance, annualRate, months, payment, totalMonths) {
+    const rm = (Number(annualRate) || 0) / 12;
+    const term = Math.max(1, Math.round(Number(months) || 0));
+    const scheduledPay = Math.max(Number(payment) || 0, fullyAmortizingPayment(balance, rm, term));
+    const values = new Array(totalMonths + 1);
+    let mag = Math.max(0, Number(balance) || 0);
+    values[0] = mag;
+    for (let m = 1; m <= totalMonths; m++) {
+      if (m <= term && mag > 0) mag = Math.max(0, mag * (1 + rm) - scheduledPay);
+      if (m >= term) mag = 0;
+      values[m] = mag;
+    }
+    return values;
   }
 
   // Price per SHARE, derived from Value ÷ Amount. "" when unpriced or share-less
@@ -229,6 +462,53 @@ const Data = (() => {
     return { rows: [...rows.keys()], cols: [...cols], cells: Object.fromEntries(rows) };
   }
 
+  /* ---------- simple aggregate projection ----------
+     Aggregate assets into one line, but project each debt separately before
+     summing the positive debt line. Amortized debts follow their own loan
+     terms; non-amortized debts carry at the shared simple yearly rate.
+     Net worth is assets - debt in the UI.
+  ------------------------------------ */
+  function aggregateProjection(opts) {
+    const { years, rate, taxOn } = opts;
+    const N = Math.max(1, Math.round(years * 12));
+    const rm = (Number(rate) || 0) / 12;
+    const assets = new Array(N + 1);
+    const debts = new Array(N + 1);
+    assets[0] = assetTotal(taxOn);
+    debts.fill(0);
+
+    investments.filter(isDebt).forEach(inv => {
+      const taxMult = taxOn ? (1 - taxRate(inv)) : 1;
+      const start = presentValue(inv, false);
+      const values = isAmortized(inv)
+        ? amortizedMagnitudeSchedule(start, inv["Nominal Rate"], amortMonths(inv), inv["Amort Payment"], N)
+        : (() => {
+            const carried = new Array(N + 1);
+            let mag = start;
+            carried[0] = mag;
+            for (let m = 1; m <= N; m++) {
+              mag = Math.max(0, mag * (1 + rm));
+              carried[m] = mag;
+            }
+            return carried;
+          })();
+      values.forEach((v, m) => { debts[m] += v * taxMult; });
+    });
+
+    for (let m = 1; m <= N; m++) {
+      assets[m] = Math.max(0, assets[m - 1] * (1 + rm));
+    }
+    const months = Array.from({ length: N + 1 }, (_, m) => m);
+    const debtRows = investments.filter(isDebt);
+    return {
+      months, assets, debts, rate: Number(rate) || 0,
+      debt: {
+        amortized: debtRows.filter(isAmortized).length,
+        carried: debtRows.filter(inv => !isAmortized(inv)).length
+      }
+    };
+  }
+
   /* ---------- projection ----------
      Monthly compounding at each investment's own nominal rate
      (rates are real: inflation is already baked in).
@@ -274,14 +554,10 @@ const Data = (() => {
 
       if (amort) {
         // Pay down the balance magnitude: interest at rate (often ~0), then
-        // payment, floored at 0. After the schedule ends it stays paid off.
-        let mag = Math.abs(v);
-        const pay = Number(inv["Amort Payment"]);
-        const months = Number(inv["Amort Months"]);
-        for (let m = 1; m <= N; m++) {
-          if (m <= months && mag > 0) mag = Math.max(0, mag * (1 + rm) - pay);
-          values[m] = -mag * taxMult;
-        }
+        // payment, floored at 0. The term is authoritative, so the helper uses
+        // at least the fully amortizing payment and leaves no residual balance.
+        const mags = amortizedMagnitudeSchedule(Math.abs(v), inv["Nominal Rate"], amortMonths(inv), inv["Amort Payment"], N);
+        for (let m = 1; m <= N; m++) values[m] = -mags[m] * taxMult;
       } else {
         for (let m = 1; m <= N; m++) {
           v = v * (1 + rm) + c;
@@ -301,7 +577,7 @@ const Data = (() => {
   return {
     FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS,
     subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
-    presentValue, netValue, taxRate, pricePerShare, isAmortized, isAsset, isDebt,
-    total, assetTotal, debtTotal, weightedRate, groupBy, crossTab, projection
+    presentValue, netValue, taxRate, pricePerShare, inferAmortPayment, isAmortized, isAsset, isDebt,
+    total, assetTotal, debtTotal, weightedRate, groupBy, crossTab, aggregateProjection, projection
   };
 })();

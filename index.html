@@ -63,9 +63,8 @@
 
     <section class="hero-stage" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <div class="eyebrow">Portfolio overview</div>
-        <h1 id="hero-title">Portfolio, debt, and projection in one view.</h1>
-        <p>Manage positions locally, review holdings by tag, and project net worth with the controls below.</p>
+        <div class="eyebrow">portfolio</div>
+        <h1 id="hero-title">Hi, Stir</h1>
         <div class="hero-metrics" id="hero-metrics"></div>
       </div>
       <div class="hero-visual panel" id="hero-visual" aria-label="Portfolio spatial summary"></div>
@@ -98,20 +97,19 @@
     <section>
       <div class="section-head">
         <h2>Capital terrarium</h2>
-        <span class="section-note">each holding sized by value and colored by vehicle</span>
+        <div class="head-right biome-head-controls">
+          <span class="section-note" id="biome-mode-note">each holding sized by value and grown from ledger semantics</span>
+          <button type="button" id="biome-whistle" class="whistle-toggle" aria-pressed="false" aria-label="Cycle terrarium layout" title="Cycle terrarium layout">
+            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+              <path d="M8 18.2c0-4.8 3.9-8.7 8.7-8.7h6.5l2.8-3.1 1.5 1.3-2.4 3.7c1.6 1.5 2.6 3.6 2.6 6 0 4.7-3.8 8.5-8.5 8.5h-2.4C11.9 25.9 8 22.4 8 18.2Zm4.1-.1c0 2.1 2.1 3.8 4.7 3.8h2.4c2.5 0 4.5-2 4.5-4.5S21.7 13 19.2 13h-2.5c-2.6 0-4.6 2.3-4.6 5.1Z"/>
+              <path d="M3.9 13.3h5.5v4.1H3.9c-1.3 0-2.3-.9-2.3-2.1s1-2 2.3-2Z"/>
+              <circle cx="19.1" cy="17.4" r="2.2"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="panel biome-panel">
         <div id="biome-view" class="biome-view" aria-label="Entity visualization of portfolio holdings"></div>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>Tag network</h2>
-        <span class="section-note">institution, account, and position relationships</span>
-      </div>
-      <div class="panel">
-        <div id="constellation-view"></div>
       </div>
     </section>
 
@@ -119,11 +117,20 @@
     <section id="projection">
       <div class="section-head">
         <h2>Projection</h2>
-        <span class="section-note">one layer per position · hover for detail</span>
+        <div class="head-right projection-head-controls">
+          <span class="section-note" id="projection-mode-note">one layer per position · hover for detail</span>
+          <div class="view-toggle" role="group" aria-label="Projection view">
+            <button type="button" id="proj-view-detailed" aria-pressed="true">Detailed</button>
+            <button type="button" id="proj-view-simple" aria-pressed="false">Simple</button>
+          </div>
+        </div>
       </div>
       <div class="panel">
         <div id="proj-chart"></div>
-        <div class="proj-readout" id="proj-readout"></div>
+        <div class="proj-readout-row">
+          <div class="proj-readout" id="proj-readout"></div>
+          <aside class="amort-costs" id="amort-costs" aria-label="Scheduled amortizing debt monthly costs" hidden></aside>
+        </div>
         <details class="proj-controls-panel" open>
           <summary>
             <span>Projection controls</span>
@@ -134,9 +141,13 @@
               <div class="slider-head"><span>Horizon</span><output id="years-out">25 yrs</output></div>
               <input type="range" id="years-slider" min="1" max="50" step="1" value="25" aria-label="Projection horizon in years">
             </div>
-            <div class="slider-block">
+            <div class="slider-block detailed-only">
               <div class="slider-head"><span>Monthly contribution</span><output id="monthly-out">$1,000/mo</output></div>
               <input type="range" id="monthly-slider" min="0" max="10000" step="100" value="1000" aria-label="Monthly contribution in dollars">
+            </div>
+            <div class="slider-block simple-only">
+              <div class="slider-head"><span>Yearly aggregate/carry rate</span><output id="simple-rate-out">8.0%/yr</output></div>
+              <input type="range" id="simple-rate-slider" min="-10" max="50" step="0.5" value="8" aria-label="Simple projection yearly aggregate rate">
             </div>
             <label class="toggle">
               <input type="checkbox" class="tax-toggle">
@@ -144,7 +155,7 @@
               <span class="t-label">Post-tax</span>
             </label>
           </div>
-          <div class="contrib-targets" id="contrib-targets"></div>
+          <div class="contrib-targets detailed-only" id="contrib-targets"></div>
         </details>
       </div>
     </section>
@@ -153,7 +164,7 @@
     <section>
       <div class="section-head">
         <h2>Assets, debts &amp; net worth</h2>
-        <span class="section-note">what you own, what you owe, what's left</span>
+        <span class="section-note"></span>
       </div>
       <div class="panel" id="balance-sheet"></div>
     </section>

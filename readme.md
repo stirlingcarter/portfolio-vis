@@ -177,13 +177,13 @@ show either the equal split ("$X/mo → N positions · $Y each") or the exact pl
 ### Debt amortization
 
 A debt with both `Amort Months` (> 0) and `Amort Payment` (> 0) is **amortized**
-(`Data.isAmortized`): its balance pays down on that schedule —
-`mag ← max(0, mag·(1 + r/12) − payment)` for `Amort Months` months, then it
-stays paid off. Interest uses the debt's rate (often ~0 for family loans), so
-the rate only really matters for a *non*-amortized debt (e.g. margin) that rides
-at its rate until you pay it down. Amortized debts are **locked out of exact
-contribution editing** and shown as scheduled-paydown badges — they run on their
-own schedule, not the contribution budget.
+(`Data.isAmortized`): its balance pays down on that schedule and is guaranteed
+to reach zero by the entered term. Each month applies interest at the debt's
+own rate (often ~0 for family loans), then subtracts the scheduled payment; if
+the typed payment is below the fully amortizing amount, the projection uses the
+term-implied payment so no residual balance remains. Amortized debts are
+**locked out of exact contribution editing** and shown as scheduled-paydown
+badges — they run on their own schedule, not the contribution budget.
 
 The signature chart (`stackedArea` in `ui.js`) shows debts as **positive visual
 balances** so their size can be compared against assets, while net worth still
@@ -193,6 +193,17 @@ debt exceeds assets, the net-worth line is clipped at the visible floor and
 labelled accordingly. Layers receiving contributions are drawn bolder;
 amortizing debts are dashed; a dotted net-worth line runs on top. The projection
 controls sit below the chart in a foldable panel.
+
+The Projection section also has a **Simple** view. `Data.aggregateProjection`
+rolls all current assets into one positive magnitude and projects debt as a
+separate positive balance. Assets and non-amortized debts use the configurable
+yearly aggregate/carry rate; amortized debts are projected one by one using
+their own loan schedules, then summed into the red debt line. It intentionally
+shares the existing horizon and post-tax controls but ignores detailed
+contribution targets and per-position asset rates. The selected projection view
+and simple yearly rate live with the other projection UI controls in
+`coldledger.ui.v1`, with the simple rate clamped to the slider range
+(`-10%` to `50%`); portfolio data export/import remains positions-only.
 
 ## Live pricing (`prices.js`)
 
