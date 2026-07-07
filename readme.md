@@ -3,6 +3,38 @@
 A fully local, single-page portfolio dashboard. No build step, no framework, no
 server required, no data leaves the machine. Open `index.html` and go.
 
+## Opening and GitHub Pages
+
+### Direct file opening
+
+Open `index.html` directly in a browser. The app runs entirely from relative
+files, so this has the same runtime behavior as serving the folder, with one
+browser restriction: the first-run automatic fetch of adjacent `tickers.json` is
+blocked under `file://` in many browsers. In that case the app starts empty; use
+**Load sample portfolio** or **Import** to load data.
+
+Saved portfolios are stored in browser `localStorage`, which is scoped to the
+current origin. A portfolio saved while opening `file://.../index.html` will not
+automatically appear at the GitHub Pages URL; use **Export** and **Import** to
+move data between them.
+
+### GitHub Pages
+
+This repo is ready to publish as a static GitHub Pages site from the repository
+root. In GitHub, go to **Settings -> Pages**, choose **Deploy from a branch**,
+then select `main` and `/ (root)`. No build step is required.
+
+The app is expected to work at a project Pages URL such as:
+
+```
+https://stirlingcarter.github.io/portfolio-vis/
+```
+
+Live pricing still depends on third-party browser fetches: CoinGecko is
+CORS-enabled, while Yahoo Finance requires the public proxy fallbacks in
+`prices.js`. If those services or proxies reject or limit requests, pricing
+falls back to manual entry.
+
 ## Directory
 
 ```
@@ -13,6 +45,7 @@ prices.js     — PRICE LAYER: live quote lookups (Yahoo + CoinGecko), zero DOM/
 portfolios.js — PERSISTENCE LAYER: named copies in localStorage, syncs with Data
 ui.js         — PRESENTATION LAYER: rendering, hand-rolled SVG charts, wiring
 tickers.json  — first-run seed / import-export file (no longer the live store)
+.nojekyll     — GitHub Pages marker: serve files directly, without Jekyll
 readme.md     — this file
 ```
 

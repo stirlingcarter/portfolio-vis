@@ -437,14 +437,24 @@
           <div class="entity-label"><b>${inv.Ticker || "—"}</b><span>${fmt$(value)} · ${cleanTag(inv.Category)}</span></div>
         </div>`;
       card.querySelector(".entity").style.setProperty("--h", clamp(92 + Math.sqrt(value / max) * 148, 92, 240) + "px");
+      card.addEventListener("pointerenter", () => card.classList.add("is-hovered"));
       card.addEventListener("mousemove", e =>
         showTip(`<b>${positionLabel(inv)}</b><br><span class="tt-k">${cleanTag(inv.Institution)} · ${cleanTag(inv["Account Type"])}</span><br>${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, e.clientX, e.clientY));
-      card.addEventListener("mouseleave", hideTip);
+      const clearHover = () => {
+        card.classList.remove("is-hovered");
+        hideTip();
+      };
+      card.addEventListener("pointerleave", clearHover);
+      card.addEventListener("pointercancel", clearHover);
       card.addEventListener("focus", () => {
+        card.classList.add("is-focused");
         const r = card.getBoundingClientRect();
         showTip(`<b>${positionLabel(inv)}</b><br>${fmt$full(value)} · ${cleanTag(inv.Category)}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, r.left + r.width / 2, r.top);
       });
-      card.addEventListener("blur", hideTip);
+      card.addEventListener("blur", () => {
+        card.classList.remove("is-focused");
+        hideTip();
+      });
       wrap.appendChild(card);
     });
     if (invs.length > 28) wrap.appendChild(el("div", "file-note", `Showing the 28 largest holdings · ${invs.length - 28} more in the ledger and charts below.`));
