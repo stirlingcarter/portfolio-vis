@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://stooq.com/q/l/?s=qqq.us&f=sd2t2ohlcv&h&e=csv\")",
+      "Bash(curl -s \"https://stooq.com/q/l/?s=voo.us&f=sd2t2ohlcv&h&e=csv\")",
+      "Bash(curl -s \"https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd\")",
+      "Bash(curl -s \"https://stooq.com/q/l/?s=btcusd&f=sd2t2ohlcv&h&e=csv\")"
+    ]
+  }
+}

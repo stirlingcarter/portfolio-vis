@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ColdData Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="wordmark">ColdData <em>Ledger</em></div>
+      <div class="tagline">Tag-driven portfolio · local &amp; private</div>
+    </div>
+    <div class="header-actions">
+      <button class="load-json">Import</button>
+      <button id="refresh-prices">Refresh prices</button>
+      <button id="copy-json" class="primary">Export</button>
+    </div>
+  </header>
+
+  <input type="file" id="file-input" accept=".json,application/json" hidden>
+
+  <!-- ============ PORTFOLIO COPIES ============ -->
+  <div class="copy-bar">
+    <span class="copy-label">Portfolio</span>
+    <select id="copy-select" aria-label="Active portfolio"></select>
+    <button id="copy-new" title="Start a new empty portfolio">New</button>
+    <button id="copy-dup" title="Duplicate the current portfolio">Duplicate</button>
+    <button id="copy-rename" title="Rename the current portfolio">Rename</button>
+    <button id="copy-del" class="ghost-danger" title="Delete the current portfolio">Delete</button>
+    <span id="save-dot" class="save-dot" role="status" aria-label="Saved locally" title="Saved locally in this browser">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" fill="currentColor"/>
+        <path d="M7.5 12.4l3 3 6-6.6" stroke="#0d1512" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+  </div>
+
+  <!-- ============ EMPTY STATE ============ -->
+  <div id="hero-empty" class="panel empty-state" style="margin-top:44px; display:none;">
+    <div class="big">An empty ledger is an invitation.</div>
+    <p>Add positions below, or import a saved backup. Every chart on this
+       page is built from the tags you assign — institution, account type, vehicle, vehicle category, ticker.</p>
+    <div class="btn-row">
+      <button class="load-json">Import backup</button>
+      <button id="seed-btn">Load sample portfolio</button>
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div id="dashboard" style="display:none;">
+
+    <div class="stats">
+      <div class="panel stat">
+        <div class="k">Net worth</div>
+        <div class="v" id="stat-total">$0</div>
+        <div class="sub" id="stat-total-sub">assets − debts</div>
+      </div>
+      <div class="panel stat">
+        <div class="k">Positions</div>
+        <div class="v" id="stat-count">0</div>
+        <div class="sub" id="stat-count-sub"></div>
+      </div>
+      <div class="panel stat">
+        <div class="k">Weighted growth rate</div>
+        <div class="v" id="stat-rate">0%</div>
+        <div class="sub">amount-weighted · real</div>
+      </div>
+      <div class="panel stat">
+        <div class="k" id="stat-proj-k">Projected</div>
+        <div class="v" id="stat-proj">$0</div>
+        <div class="sub">with current contribution plan</div>
+      </div>
+    </div>
+
+    <!-- ===== projection ===== -->
+    <section id="projection">
+      <div class="section-head">
+        <h2>The compounding mountain</h2>
+        <span class="section-note">one layer per position · hover for detail</span>
+      </div>
+      <div class="panel">
+        <div id="proj-chart"></div>
+        <div class="proj-readout" id="proj-readout"></div>
+        <details class="proj-controls-panel" open>
+          <summary>
+            <span>Projection controls</span>
+            <span id="proj-controls-summary">25Y · $1.0k/mo</span>
+          </summary>
+          <div class="controls">
+            <div class="slider-block">
+              <div class="slider-head"><span>Horizon</span><output id="years-out">25 yrs</output></div>
+              <input type="range" id="years-slider" min="1" max="50" step="1" value="25" aria-label="Projection horizon in years">
+            </div>
+            <div class="slider-block">
+              <div class="slider-head"><span>Monthly contribution</span><output id="monthly-out">$1,000/mo</output></div>
+              <input type="range" id="monthly-slider" min="0" max="10000" step="100" value="1000" aria-label="Monthly contribution in dollars">
+            </div>
+            <label class="toggle">
+              <input type="checkbox" class="tax-toggle">
+              <span class="track"></span>
+              <span class="t-label">Post-tax</span>
+            </label>
+          </div>
+          <div class="contrib-targets" id="contrib-targets"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ===== balance sheet: assets, debts, net worth ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Assets, debts &amp; net worth</h2>
+        <span class="section-note">what you own, what you owe, what's left</span>
+      </div>
+      <div class="panel" id="balance-sheet"></div>
+    </section>
+
+    <!-- ===== tag donuts (invested assets) ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Invested assets, by every tag</h2>
+        <div class="head-right">
+          <span class="section-note" id="donut-scope-note"></span>
+          <label class="toggle">
+            <input type="checkbox" class="tax-toggle">
+            <span class="track"></span>
+            <span class="t-label">Post-tax</span>
+          </label>
+        </div>
+      </div>
+      <div class="donut-grid" id="donut-grid"></div>
+    </section>
+
+    <!-- ===== bars & crosstabs ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Weight &amp; composition</h2>
+        <span class="section-note">invested assets · tag × tag</span>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <h3 class="panel-title">Assets by ticker</h3>
+          <div id="ticker-bars"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Vehicle mix per account type</h3>
+          <div id="xtab-account-category"></div>
+          <h3 class="panel-title" style="margin-top:22px;">Account types per institution</h3>
+          <div id="xtab-institution-account"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== debts breakdown (only when debts exist) ===== -->
+    <section id="debt-section" style="display:none;">
+      <div class="section-head">
+        <h2>Debts</h2>
+        <span class="section-note">balances owed · excluded from the totals above</span>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <h3 class="panel-title">Debt by call-sign</h3>
+          <div id="debt-bars"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Debt by institution</h3>
+          <div id="debt-inst-bars"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /dashboard -->
+
+  <!-- ===== ledger + add form ===== -->
+  <section>
+    <div class="section-head">
+      <h2>Ledger</h2>
+      <span class="section-note">saved automatically · Export any time for a backup</span>
+    </div>
+    <div class="panel">
+      <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add your first below.</div>
+      <div class="table-scroll" id="ledger-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="num">ID</th><th>Ticker</th><th>Institution</th><th>Account</th>
+              <th>Kind</th><th>Vehicle</th><th>Vehicle Category</th>
+              <th class="num">Shares</th><th class="num">Price</th><th class="num">Value</th><th class="num">Rate</th><th class="num">Tax</th><th>Amort</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="ledger-body"></tbody>
+        </table>
+      </div>
+
+      <div class="add-form">
+        <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
+        <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
+        <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
+        <label class="field"><span>Kind</span><select id="f-kind"><option value="Asset">Asset</option><option value="Debt">Debt</option></select></label>
+        <label class="field"><span>Amount (shares)</span><input type="number" id="f-amount" min="0" step="any" placeholder="12.5"></label>
+        <label class="field"><span>Price ($/share)</span>
+          <span class="price-field">
+            <input type="number" id="f-price" min="0" step="any" placeholder="480.20">
+            <button type="button" id="fetch-price" class="fetch-btn" title="Fetch live price for this ticker">Fetch</button>
+          </span>
+        </label>
+        <label class="field"><span>Vehicle</span><input type="text" id="f-category" list="dl-Category" placeholder="Stock"></label>
+        <label class="field"><span>Vehicle category</span><input type="text" id="f-subcategory" list="dl-Subcategory" placeholder="Growth Stocks"></label>
+        <label class="field"><span>Nominal rate</span><input type="number" id="f-rate" step="0.005" value="0.08"></label>
+        <label class="field"><span>Nominal tax rate</span>
+          <span class="tax-field">
+            <input type="number" id="f-tax" step="0.005" value="0.1">
+            <button type="button" id="f-tax-toggle" class="mini-btn" title="This position isn't taxed">−</button>
+          </span>
+        </label>
+        <label class="field amort-only" hidden><span>Debt: months left</span>
+          <span class="tax-field">
+            <input type="number" id="f-amort-months" min="0" step="1" placeholder="24 · blank = carries">
+            <button type="button" id="f-amort-months-toggle" class="mini-btn" title="Remove months left">−</button>
+          </span>
+        </label>
+        <label class="field amort-only" hidden><span>Debt: monthly payment</span>
+          <span class="tax-field">
+            <input type="number" id="f-amort-pay" min="0" step="any" placeholder="500">
+            <button type="button" id="f-amort-pay-toggle" class="mini-btn" title="Remove monthly payment">−</button>
+          </span>
+        </label>
+        <div class="form-actions">
+          <button id="add-btn" class="primary">Add position</button>
+          <span class="form-hint">Ticker or a short call-sign (HOUSE, DEBT) · Fetch tries a live price when it looks tradable · leave price blank to enter your own</span>
+        </div>
+      </div>
+
+      <datalist id="dl-Institution"></datalist>
+      <datalist id="dl-Account-Type"></datalist>
+      <datalist id="dl-Category"></datalist>
+      <datalist id="dl-Subcategory"></datalist>
+    </div>
+  </section>
+
+</div><!-- /wrap -->
+
+<div id="tooltip" role="status"></div>
+<div id="toast"></div>
+
+<script src="data.js"></script>
+<script src="prices.js"></script>
+<script src="portfolios.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
