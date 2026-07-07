@@ -31,15 +31,19 @@
   const acctShort = a => ACCT_ABBR[a] || (a ? a.slice(0, 5) : "?");
   const positionLabel = inv => `${inv.Ticker || "#" + inv.ID} (${acctShort(inv["Account Type"])})`;
 
+  const MONEY_MASK = "$•••";
+  const AMOUNT_MASK = "••••";
+  const moneyHidden = () => ui.privacyMode === true;
   const fmt$ = v => {
+    if (moneyHidden()) return MONEY_MASK;
     const abs = Math.abs(v);
     if (abs >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
     if (abs >= 1e4) return "$" + (v / 1e3).toFixed(1) + "k";
     return "$" + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
-  const fmt$full = v => "$" + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const fmt$full = v => moneyHidden() ? MONEY_MASK : "$" + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
   // Full dollars-and-cents — used in the ledger where exact valuations matter.
-  const fmt$cents = v => "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt$cents = v => moneyHidden() ? MONEY_MASK : "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = v => (v * 100).toFixed(1) + "%";
   const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
 
@@ -62,37 +66,49 @@
     return /^[A-Za-z][A-Za-z.\-]{0,6}$/.test((inv.Ticker || "").trim());
   }
   const shouldAutoPrice = inv => !!inv && (fixedPriceForTicker(inv.Ticker) != null || looksTradable(inv));
+  const PRICE_REFRESH_THROTTLE_MS = 60 * 1000;
 
   /* ---------- ui state (presentation-only) ---------- */
 
   const ui = {
+    theme: "dark",
     taxOn: false,
     years: 25,
     monthly: 1000,
-    projectionView: "detailed",
+    projectionView: "simple",
     simpleRate: 0.08,
+    simpleMonthly: 0,
     heroMetric: "net",
     biomeMode: "cards",
+    privacyMode: false,
     contribIds: new Set(),
     contribAmounts: new Map(), // exact monthly dollars per selected position after user edits
     contribTouched: false,  // once the user picks targets, stop auto-selecting new ones
+    floatPositions: new Map(), // saved free-floating terrarium positions by holding ID
     editingId: null,        // ledger row currently being edited in place (or null)
     ledgerSort: "ID",
     ledgerSortDir: "asc",
-    ledgerByInstitution: false
+    ledgerByInstitution: false,
+    lastPriceRefreshAt: 0
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
   const RANGE_LIMITS = {
     years: { min: 1, max: 50, step: 1, fallback: 25 },
     monthly: { min: 0, max: 10000, step: 100, fallback: 1000 },
-    simpleRate: { min: -0.1, max: 0.5, step: 0.005, fallback: 0.08 }
+    simpleRate: { min: -0.1, max: 0.5, step: 0.005, fallback: 0.08 },
+    simpleMonthly: { min: 0, max: 1000000, step: 100, fallback: 0 }
   };
   const HERO_METRICS = [
     { key: "net", label: "net worth", value: () => Data.total(ui.taxOn) },
     { key: "assets", label: "assets", value: () => Data.assetTotal(ui.taxOn) },
     { key: "debt", label: "debt", value: () => Data.debtTotal(ui.taxOn) }
   ];
+  // Coherent app themes — palettes live in styles.css under html[data-theme=…].
+  // "dark" is the original petrol/brass identity and needs no attribute overrides.
+  const THEMES = ["dark", "white", "sand", "pink"];
+  const coerceTheme = value => THEMES.includes(value) ? value : "dark";
+
   const BIOME_MODES = ["cards", "float", "pens"];
   const BIOME_MODE_META = {
     cards: {
@@ -121,11 +137,21 @@
     return HERO_METRICS[(idx + 1) % HERO_METRICS.length].key;
   }
 
+  function heroColorForMetric(key) {
+    if (key === "assets") return "var(--assets, var(--asset))";
+    if (key === "debt") return "var(--debt, var(--danger))";
+    return "var(--net, var(--net-worth, #a78bfa))";
+  }
+
   function coerceBiomeMode(value) {
     if (BIOME_MODES.includes(value)) return value;
     if (value === "free" || value === "floating") return "float";
     if (value === "institution" || value === "institutions" || value === "inst" || value === "pen") return "pens";
     return "cards";
+  }
+
+  function coerceProjectionView(value) {
+    return value === "detailed" || value === "simple" ? value : "simple";
   }
 
   function nextBiomeModeKey(key) {
@@ -161,6 +187,50 @@
     try { localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(state)); } catch { /* quota / privacy mode */ }
   }
 
+  function timestampValue(raw) {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function formatEasternTime(ms) {
+    const ts = timestampValue(ms);
+    if (!ts) return "";
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      }).format(new Date(ts)) + " ET";
+    } catch {
+      return new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) + " ET";
+    }
+  }
+
+  function priceRefreshStatusText(prefix) {
+    const updated = ui.lastPriceRefreshAt
+      ? `Updated at ${formatEasternTime(ui.lastPriceRefreshAt)}`
+      : "Not updated yet";
+    return prefix ? `${prefix} · ${updated}` : updated;
+  }
+
+  function updateLivePriceStatus(prefix = "") {
+    const node = $("#live-price-status");
+    if (node) node.textContent = priceRefreshStatusText(prefix);
+  }
+
+  function shouldSkipPageLoadPriceRefresh(now = Date.now()) {
+    const last = timestampValue(ui.lastPriceRefreshAt);
+    const age = now - last;
+    return last > 0 && Number.isFinite(age) && age >= 0 && age <= PRICE_REFRESH_THROTTLE_MS;
+  }
+
+  function markLivePriceRefreshSuccess(at = Date.now()) {
+    ui.lastPriceRefreshAt = timestampValue(at);
+    saveUiState();
+    updateLivePriceStatus();
+  }
+
   function activePortfolioId() {
     try { return Portfolios.activeId(); } catch { return null; }
   }
@@ -169,6 +239,10 @@
     ui.contribTouched = false;
     ui.contribIds.clear();
     ui.contribAmounts.clear();
+  }
+
+  function resetFloatPositionState() {
+    ui.floatPositions.clear();
   }
 
   function serializeContributionState() {
@@ -203,6 +277,46 @@
     }
   }
 
+  function serializeFloatPositionState() {
+    const positions = {};
+    ui.floatPositions.forEach((pos, id) => {
+      const x = Number(pos && pos.x);
+      const y = Number(pos && pos.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      positions[String(id)] = {
+        x: Number(clamp(x, 0, 100).toFixed(2)),
+        y: Number(clamp(y, 0, 100).toFixed(2))
+      };
+    });
+    return positions;
+  }
+
+  function applyFloatPositionState(raw) {
+    resetFloatPositionState();
+    const positions = raw && typeof raw === "object" && raw.floatPositions && typeof raw.floatPositions === "object"
+      ? raw.floatPositions
+      : null;
+    if (!positions) return;
+    Object.entries(positions).forEach(([id, pos]) => {
+      const nId = Number(id);
+      const x = Number(pos && pos.x);
+      const y = Number(pos && pos.y);
+      if (!Number.isFinite(nId) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+      ui.floatPositions.set(nId, { x: clamp(x, 0, 100), y: clamp(y, 0, 100) });
+    });
+  }
+
+  function pruneFloatPositions(liveIds) {
+    let changed = false;
+    [...ui.floatPositions.keys()].forEach(id => {
+      if (!liveIds.has(id)) {
+        ui.floatPositions.delete(id);
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   function loadStoredProjectionState() {
     const state = readUiStorage();
     const projection = state.projection;
@@ -210,18 +324,24 @@
       if ("years" in projection) ui.years = rangeValue(projection.years, RANGE_LIMITS.years);
       if ("monthly" in projection) ui.monthly = rangeValue(projection.monthly, RANGE_LIMITS.monthly);
       if ("taxOn" in projection) ui.taxOn = projection.taxOn === true;
-      if ("projectionView" in projection) ui.projectionView = projection.projectionView === "simple" ? "simple" : "detailed";
+      if ("projectionView" in projection) ui.projectionView = coerceProjectionView(projection.projectionView);
       if ("simpleRate" in projection) ui.simpleRate = rangeValue(projection.simpleRate, RANGE_LIMITS.simpleRate);
+      if ("simpleMonthly" in projection) ui.simpleMonthly = rangeValue(projection.simpleMonthly, RANGE_LIMITS.simpleMonthly);
     }
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
+    if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
+    if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
+    if ("theme" in state) ui.theme = coerceTheme(state.theme);
   }
 
-  function loadActiveContributionState() {
+  function loadActivePortfolioUiState() {
     const state = readUiStorage();
     const activeId = activePortfolioId();
     const byPortfolio = state.portfolios && typeof state.portfolios === "object" ? state.portfolios : {};
-    applyContributionState(activeId ? byPortfolio[activeId] : null);
+    const portfolioState = activeId ? byPortfolio[activeId] : null;
+    applyContributionState(portfolioState);
+    applyFloatPositionState(portfolioState);
   }
 
   function saveUiState() {
@@ -232,20 +352,29 @@
         years: rangeValue(ui.years, RANGE_LIMITS.years),
         monthly: rangeValue(ui.monthly, RANGE_LIMITS.monthly),
         taxOn: ui.taxOn === true,
-        projectionView: ui.projectionView === "simple" ? "simple" : "detailed",
-        simpleRate: rangeValue(ui.simpleRate, RANGE_LIMITS.simpleRate)
+        projectionView: coerceProjectionView(ui.projectionView),
+        simpleRate: rangeValue(ui.simpleRate, RANGE_LIMITS.simpleRate),
+        simpleMonthly: rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly)
       },
       heroMetric: heroMetricFor(ui.heroMetric).key,
       biomeMode: coerceBiomeMode(ui.biomeMode),
+      theme: coerceTheme(ui.theme),
+      privacyMode: ui.privacyMode === true,
+      lastPriceRefreshAt: timestampValue(ui.lastPriceRefreshAt),
       portfolios: state.portfolios && typeof state.portfolios === "object" ? { ...state.portfolios } : {}
     };
     const activeId = activePortfolioId();
-    if (activeId) next.portfolios[activeId] = serializeContributionState();
+    if (activeId) {
+      next.portfolios[activeId] = {
+        ...serializeContributionState(),
+        floatPositions: serializeFloatPositionState()
+      };
+    }
     writeUiStorage(next);
   }
 
   function syncProjectionControlsToDom() {
-    const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
+    const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider"), simpleMonthly = $("#simple-monthly-input");
     if (years) {
       years.min = String(RANGE_LIMITS.years.min);
       years.max = String(RANGE_LIMITS.years.max);
@@ -273,12 +402,35 @@
       const out = $("#simple-rate-out");
       if (out) out.textContent = fmtPct(ui.simpleRate) + "/yr";
     }
+    if (simpleMonthly) {
+      simpleMonthly.min = String(RANGE_LIMITS.simpleMonthly.min);
+      simpleMonthly.step = String(RANGE_LIMITS.simpleMonthly.step);
+      ui.simpleMonthly = rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly);
+      simpleMonthly.value = moneyHidden() ? "" : String(ui.simpleMonthly);
+      simpleMonthly.placeholder = moneyHidden() ? MONEY_MASK : "$/mo";
+      simpleMonthly.disabled = moneyHidden();
+      simpleMonthly.title = moneyHidden()
+        ? "Turn off privacy mode to edit this simple monthly contribution"
+        : "Monthly amount added to aggregate assets in Simple projection";
+      const out = $("#simple-monthly-out");
+      if (out) out.textContent = fmt$full(ui.simpleMonthly) + "/mo";
+    }
     document.querySelectorAll(".tax-toggle").forEach(t => { t.checked = ui.taxOn; });
+    syncPrivacyControlToDom();
+    syncThemeToDom();
     syncProjectionModeToDom();
     syncBiomeModeToDom();
   }
 
+  function syncThemeToDom() {
+    ui.theme = coerceTheme(ui.theme);
+    document.documentElement.dataset.theme = ui.theme;
+    document.querySelectorAll(".theme-toggle button").forEach(btn =>
+      btn.setAttribute("aria-pressed", String(btn.dataset.themeChoice === ui.theme)));
+  }
+
   function syncProjectionModeToDom() {
+    ui.projectionView = coerceProjectionView(ui.projectionView);
     const simple = ui.projectionView === "simple";
     const section = $("#projection");
     if (section) section.classList.toggle("is-simple", simple);
@@ -288,7 +440,7 @@
     if (simpleBtn) simpleBtn.setAttribute("aria-pressed", String(simple));
     const note = $("#projection-mode-note");
     if (note) note.textContent = simple
-      ? "aggregate assets · scheduled debt paydown"
+      ? "aggregate assets/debt · one rate · one contribution"
       : "one layer per position · hover for detail";
   }
 
@@ -308,6 +460,18 @@
     if (note) note.textContent = meta.note;
   }
 
+  function syncPrivacyControlToDom() {
+    const on = moneyHidden();
+    document.documentElement.toggleAttribute("data-privacy", on);
+    const btn = $("#privacy-toggle");
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on ? "Show monetary amounts" : "Hide monetary amounts";
+    btn.setAttribute("aria-label", on
+      ? "Privacy mode on. Show monetary amounts."
+      : "Privacy mode off. Hide monetary amounts.");
+  }
+
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => {
     const n = document.createElement(tag);
@@ -320,6 +484,40 @@
     for (const k in attrs) n.setAttribute(k, attrs[k]);
     return n;
   };
+
+  function renderHeroDateTime(now = new Date()) {
+    const title = $("#hero-title");
+    if (!title) return;
+    title.innerHTML = "";
+    const time = el("time", "hero-datetime");
+    const timeText = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const dateText = now.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
+    time.dateTime = now.toISOString();
+    time.setAttribute("aria-label", `${timeText}, ${dateText}`);
+    time.appendChild(el("span", "hero-time", timeText));
+    time.appendChild(el("span", "hero-date", dateText));
+    title.appendChild(time);
+  }
+
+  let heroClockTimeout = null;
+  function startHeroClock() {
+    if (heroClockTimeout !== null) return;
+    renderHeroDateTime();
+    const tick = () => {
+      renderHeroDateTime();
+      const now = new Date();
+      const delay = ((60 - now.getSeconds()) * 1000) - now.getMilliseconds();
+      heroClockTimeout = setTimeout(tick, Math.max(1000, delay));
+    };
+    const now = new Date();
+    const delay = ((60 - now.getSeconds()) * 1000) - now.getMilliseconds();
+    heroClockTimeout = setTimeout(tick, Math.max(1000, delay));
+  }
 
   /* ---------- tooltip & toast ---------- */
 
@@ -343,42 +541,66 @@
     toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
   }
 
-  /* ---------- donut chart ---------- */
+  /* ---------- invested-assets pie chart ---------- */
 
   function donut(container, title, groups, totalLabel) {
     const card = el("div", "panel donut-card");
-    card.appendChild(el("h3", null, title));
+    const displayTotal = groups.reduce((s, g) => s + g.value, 0);
+    const head = el("div", "donut-card-head");
+    head.appendChild(el("h3", null, title));
+    head.appendChild(el("div", "donut-total", `<b>${fmt$(displayTotal)}</b><span>${totalLabel}</span>`));
+    card.appendChild(head);
     const body = el("div", "donut-body");
 
-    const size = 150, cx = size / 2, cy = size / 2, rOut = 70, rIn = 46;
-    const svg = svgEl("svg", { viewBox: `0 0 ${size} ${size}`, class: "donut-svg", width: size, height: size, role: "img" });
-    const total = groups.reduce((s, g) => s + g.value, 0) || 1;
+    const size = 150, viewH = 166, cx = size / 2, cy = 74, rOut = 64, depth = 12;
+    const svg = svgEl("svg", {
+      viewBox: `0 0 ${size} ${viewH}`,
+      class: "donut-svg pie-can-svg",
+      width: size,
+      height: viewH,
+      role: "img",
+      "aria-label": `${title}: ${fmt$full(displayTotal)} ${totalLabel}`
+    });
+    const total = displayTotal || 1;
 
     const polar = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    svg.appendChild(svgEl("ellipse", { cx, cy: cy + depth + rOut * .72, rx: rOut * .82, ry: 13, class: "pie-can-shadow" }));
+    const depthGroup = svgEl("g", { class: "pie-depth-group", transform: `translate(0 ${depth})` });
+    const topGroup = svgEl("g", { class: "pie-top-group" });
     let angle = -Math.PI / 2;
     groups.forEach(g => {
       const frac = g.value / total;
-      const sweep = Math.max(frac * Math.PI * 2 - 0.03, 0.005);
-      const a0 = angle + 0.015, a1 = angle + 0.015 + sweep;
+      const gap = groups.length > 1 ? 0.018 : 0;
+      const sweep = Math.max(frac * Math.PI * 2 - gap * 2, 0.005);
+      const a0 = angle + gap, a1 = angle + gap + sweep;
       angle += frac * Math.PI * 2;
       const large = sweep > Math.PI ? 1 : 0;
       const [x0o, y0o] = polar(rOut, a0), [x1o, y1o] = polar(rOut, a1);
-      const [x0i, y0i] = polar(rIn, a1), [x1i, y1i] = polar(rIn, a0);
-      const path = svgEl("path", {
-        d: `M ${x0o} ${y0o} A ${rOut} ${rOut} 0 ${large} 1 ${x1o} ${y1o} L ${x0i} ${y0i} A ${rIn} ${rIn} 0 ${large} 0 ${x1i} ${y1i} Z`,
-        fill: colorFor(g.label), class: "donut-seg"
+      const d = `M ${cx} ${cy} L ${x0o} ${y0o} A ${rOut} ${rOut} 0 ${large} 1 ${x1o} ${y1o} Z`;
+      const depthPath = svgEl("path", {
+        d,
+        fill: colorFor(g.label),
+        class: "pie-depth"
       });
-      path.addEventListener("mousemove", e =>
-        showTip(`<b>${g.label}</b><br><span class="tt-k">value</span> ${fmt$full(g.value)}<br><span class="tt-k">share</span> ${fmtPct(g.value / total)} · ${g.count} position${g.count > 1 ? "s" : ""}`, e.clientX, e.clientY));
-      path.addEventListener("mouseleave", hideTip);
-      svg.appendChild(path);
+      const path = svgEl("path", {
+        d,
+        fill: colorFor(g.label),
+        class: "donut-seg pie-seg"
+      });
+      const showSliceTip = e =>
+        showTip(`<b>${g.label}</b><br><span class="tt-k">value</span> ${fmt$full(g.value)}<br><span class="tt-k">share</span> ${fmtPct(g.value / total)} · ${g.count} position${g.count > 1 ? "s" : ""}`, e.clientX, e.clientY);
+      [depthPath, path].forEach(slice => {
+        slice.addEventListener("mousemove", showSliceTip);
+        slice.addEventListener("mouseleave", hideTip);
+      });
+      depthGroup.appendChild(depthPath);
+      topGroup.appendChild(path);
     });
-
-    const centerNum = svgEl("text", { x: cx, y: cy, "text-anchor": "middle", class: "donut-center-num" });
-    centerNum.textContent = fmt$(total === 1 && groups.length === 0 ? 0 : total);
-    const centerLbl = svgEl("text", { x: cx, y: cy + 14, "text-anchor": "middle", class: "donut-center-lbl" });
-    centerLbl.textContent = totalLabel;
-    svg.appendChild(centerNum); svg.appendChild(centerLbl);
+    if (groups.length === 0) {
+      topGroup.appendChild(svgEl("circle", { cx, cy, r: rOut, class: "pie-empty" }));
+    }
+    svg.appendChild(depthGroup);
+    svg.appendChild(topGroup);
     body.appendChild(svg);
 
     const legend = el("div", "legend");
@@ -444,7 +666,7 @@
       const zy = y(0);
       svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: zy, y2: zy, class: "zero-line" }));
       const z = svgEl("text", { x: padL - 10, y: zy + 4, "text-anchor": "end", class: "axis-text zero-axis-text" });
-      z.textContent = "$0";
+      z.textContent = fmt$(0);
       svg.appendChild(z);
     }
 
@@ -499,7 +721,7 @@
     const netEndY = Math.min(Math.max(yClamped(netEnd), padT + 16), padT + ih - 8);
     svg.appendChild(svgEl("circle", { cx: x(N), cy: yClamped(netEnd), r: 3.5, class: "net-worth-dot" }));
     const netLabel = svgEl("text", { x: W - padR - 8, y: netEndY - 8, "text-anchor": "end", class: "net-worth-label" });
-    netLabel.textContent = `Net worth ${fmt$(netEnd)}${netEnd < yMin ? " (below $0)" : ""}`;
+    netLabel.textContent = `Net worth ${fmt$(netEnd)}${netEnd < yMin ? ` (below ${fmt$(0)})` : ""}`;
     svg.appendChild(netLabel);
 
     // crosshair
@@ -604,22 +826,42 @@
 
   /* ---------- horizontal bars ---------- */
 
-  function hBars(container, groups) {
+  function hBars(container, groups, opts = {}) {
     container.innerHTML = "";
-    const max = Math.max(...groups.map(g => g.value), 1);
+    if (groups.length === 0) {
+      container.appendChild(el("div", "file-note", "No positions yet."));
+      return;
+    }
+    const denominator = opts.denominator > 0
+      ? opts.denominator
+      : Math.max(...groups.map(g => g.value), 1);
+    const denominatorLabel = opts.denominatorLabel || "largest row";
+    if (opts.showDenominator !== false) {
+      const note = el("div", "bar-denominator-note");
+      note.textContent = `Each full track = ${denominatorLabel} (${fmt$full(denominator)}).`;
+      container.appendChild(note);
+    }
     groups.forEach(g => {
+      const frac = denominator > 0 ? clamp(g.value / denominator, 0, 1) : 0;
+      const color = colorFor(g.colorKey || g.label);
       const row = el("div", "bar-row");
-      row.appendChild(el("span", "b-lbl", g.label));
+      const lbl = el("span", "b-lbl", g.label);
+      lbl.title = g.label;
+      row.appendChild(lbl);
       const track = el("div", "bar-track");
+      track.setAttribute("aria-label", `${g.label}: ${fmtPct(frac)} of ${denominatorLabel}`);
       const fill = el("div", "bar-fill");
-      fill.style.width = (g.value / max * 100).toFixed(1) + "%";
-      fill.style.background = colorFor(g.label);
+      fill.style.width = (frac * 100).toFixed(1) + "%";
+      fill.style.background = color;
+      fill.style.color = color;
       track.appendChild(fill);
       row.appendChild(track);
-      row.appendChild(el("span", "b-val", fmt$(g.value)));
+      row.appendChild(el("span", "b-val", `${fmtPct(frac)} · ${fmt$(g.value)}`));
+      row.addEventListener("mousemove", e =>
+        showTip(`<b>${g.label}</b><br><span class="tt-k">value</span> ${fmt$full(g.value)}<br><span class="tt-k">share</span> ${fmtPct(frac)} of ${denominatorLabel}`, e.clientX, e.clientY));
+      row.addEventListener("mouseleave", hideTip);
       container.appendChild(row);
     });
-    if (groups.length === 0) container.appendChild(el("div", "file-note", "No positions yet."));
   }
 
   /* ---------- crosstab stacked bars ---------- */
@@ -649,6 +891,26 @@
       container.appendChild(wrap);
     });
     if (xtab.rows.length === 0) container.appendChild(el("div", "file-note", "No positions yet."));
+  }
+
+  function institutionAccountBars(container, xtab, denominator) {
+    const groups = [];
+    xtab.rows.forEach(institution => {
+      xtab.cols.forEach(account => {
+        const value = xtab.cells[institution][account] || 0;
+        if (value <= 0) return;
+        groups.push({
+          label: `${institution} · ${account}`,
+          value,
+          colorKey: account
+        });
+      });
+    });
+    groups.sort((a, b) => b.value - a.value);
+    hBars(container, groups, {
+      denominator,
+      denominatorLabel: "total invested assets"
+    });
   }
 
   /* ---------- spatial 2026 visualizations ---------- */
@@ -702,6 +964,48 @@
   const floatSizeFor = (value, max) => clamp(56 + Math.sqrt(value / max) * 88, 56, 144);
   const cardEntitySizeFor = (value, max) => clamp(66 + Math.sqrt(value / max) * 96, 66, 162);
   const penEntitySizeFor = (value, max) => clamp(50 + Math.sqrt(value / max) * 62, 50, 112);
+  function floatEdgesFor(size, bounds) {
+    const width = bounds && bounds.width ? bounds.width : FLOAT_STAGE.w;
+    const height = bounds && bounds.height ? bounds.height : FLOAT_STAGE.h;
+    return {
+      x: clamp((size * .48 / width) * 100, 5, 18),
+      y: clamp((size * .58 / height) * 100, 8, 24)
+    };
+  }
+
+  function clampFloatPosition(x, y, size, bounds) {
+    const edges = floatEdgesFor(size, bounds);
+    const rawX = Number.isFinite(Number(x)) ? Number(x) : 50;
+    const rawY = Number.isFinite(Number(y)) ? Number(y) : 50;
+    return {
+      x: Number(clamp(rawX, edges.x, 100 - edges.x).toFixed(2)),
+      y: Number(clamp(rawY, edges.y, 100 - edges.y).toFixed(2))
+    };
+  }
+
+  function saveFloatPosition(id, x, y, size, bounds) {
+    const nId = Number(id);
+    if (!Number.isFinite(nId)) return;
+    ui.floatPositions.set(nId, clampFloatPosition(x, y, size, bounds));
+    saveUiState();
+  }
+
+  function applyStoredFloatPositions(layout, invs) {
+    let changed = false;
+    invs.forEach(inv => {
+      const saved = ui.floatPositions.get(inv.ID);
+      const pos = layout.get(inv.ID);
+      if (!saved || !pos) return;
+      const clamped = clampFloatPosition(saved.x, saved.y, pos.size);
+      if (clamped.x !== saved.x || clamped.y !== saved.y) {
+        ui.floatPositions.set(inv.ID, clamped);
+        changed = true;
+      }
+      layout.set(inv.ID, { ...pos, x: clamped.x, y: clamped.y });
+    });
+    return changed;
+  }
+
   function floatLayoutFor(invs, max) {
     const count = Math.max(invs.length, 1);
     const cols = Math.ceil(Math.sqrt(count * 1.55));
@@ -808,6 +1112,7 @@
     const core = el("button", "hero-core", `<b>${fmt$(heroMetricValue)}</b><span>${heroMetric.label}${taxContext}</span>`);
     core.type = "button";
     core.title = `Show ${nextHeroMetric.label}`;
+    core.style.setProperty("--hero-core-color", heroColorForMetric(heroMetric.key));
     core.setAttribute("aria-label", `Showing ${heroMetric.label}: ${fmt$full(heroMetricValue)}${ui.taxOn ? " post-tax" : ""}. Activate to show ${nextHeroMetric.label}.`);
     core.addEventListener("click", () => {
       ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
@@ -826,7 +1131,7 @@
       n.style.setProperty("--angle", angle + "deg");
       n.style.setProperty("--dist", dist + "px");
       n.style.setProperty("--size", size + "px");
-      n.style.setProperty("--c", colorFor(inv.Category || inv.Ticker));
+      n.style.setProperty("--c", inv.Kind === "Debt" ? heroColorForMetric("debt") : heroColorForMetric("assets"));
       n.title = `${positionLabel(inv)} · ${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}`;
       orbit.appendChild(n);
     });
@@ -843,7 +1148,7 @@
     return `<div class="entity plant"><span class="stem"></span><span class="leaf a"></span><span class="leaf b"></span><span class="leaf c"></span></div>`;
   }
 
-  function wireFloatDrag(card, wrap) {
+  function wireFloatDrag(card, wrap, holdingId) {
     card.classList.add("is-draggable");
     card.addEventListener("pointerdown", e => {
       if (e.pointerType !== "mouse" || e.button !== 0) return;
@@ -862,14 +1167,13 @@
         y: parseFloat(card.style.getPropertyValue("--float-y")) || 50,
         size: parseFloat(card.style.getPropertyValue("--float-size")) || 120
       };
-      const edgeX = clamp((start.size * .48 / bounds.width) * 100, 5, 18);
-      const edgeY = clamp((start.size * .58 / bounds.height) * 100, 8, 24);
+      const edges = floatEdgesFor(start.size, bounds);
 
       const move = moveEvent => {
         const nextX = start.x + ((moveEvent.clientX - start.clientX) / bounds.width) * 100;
         const nextY = start.y + ((moveEvent.clientY - start.clientY) / bounds.height) * 100;
-        card.style.setProperty("--float-x", clamp(nextX, edgeX, 100 - edgeX).toFixed(2) + "%");
-        card.style.setProperty("--float-y", clamp(nextY, edgeY, 100 - edgeY).toFixed(2) + "%");
+        card.style.setProperty("--float-x", clamp(nextX, edges.x, 100 - edges.x).toFixed(2) + "%");
+        card.style.setProperty("--float-y", clamp(nextY, edges.y, 100 - edges.y).toFixed(2) + "%");
       };
       const stop = stopEvent => {
         card.classList.remove("is-dragging");
@@ -877,6 +1181,13 @@
         card.removeEventListener("pointermove", move);
         card.removeEventListener("pointerup", stop);
         card.removeEventListener("pointercancel", stop);
+        saveFloatPosition(
+          holdingId,
+          parseFloat(card.style.getPropertyValue("--float-x")),
+          parseFloat(card.style.getPropertyValue("--float-y")),
+          start.size,
+          bounds
+        );
       };
 
       card.addEventListener("pointermove", move);
@@ -915,7 +1226,7 @@
       card.style.setProperty("--float-y", pos.y.toFixed(2) + "%");
       card.style.setProperty("--float-rot", pos.rot.toFixed(2) + "deg");
       card.style.setProperty("--float-delay", pos.delay.toFixed(2) + "s");
-      card.title = "Drag with a mouse to reposition until the view re-renders.";
+      card.title = "Drag with a mouse to reposition. Position is saved for this portfolio.";
     }
     card.innerHTML = `
       <div class="entity-card-lift">
@@ -946,7 +1257,7 @@
       card.classList.remove("is-focused");
       hideTip();
     });
-    if (floating && opts.wrap) wireFloatDrag(card, opts.wrap);
+    if (floating && opts.wrap) wireFloatDrag(card, opts.wrap, inv.ID);
     return card;
   }
 
@@ -983,7 +1294,11 @@
     const invs = Data.all().slice().sort((a, b) => invMagnitude(b) - invMagnitude(a));
     const max = Math.max(...invs.map(invMagnitude), 1);
     const visibleInvs = invs.slice(0, 28);
+    const liveIds = new Set(invs.map(inv => inv.ID));
+    let floatStateChanged = pruneFloatPositions(liveIds);
     const floatLayout = floating ? floatLayoutFor(visibleInvs, max) : new Map();
+    if (floating) floatStateChanged = applyStoredFloatPositions(floatLayout, visibleInvs) || floatStateChanged;
+    if (floatStateChanged) saveUiState();
     if (penned) {
       renderBiomePens(wrap, visibleInvs, max, invs.length);
       return;
@@ -1229,6 +1544,316 @@
     return refresh;
   }
 
+  let activeInlineEditor = null;
+
+  const INLINE_CELL_LABELS = {
+    "Ticker": "ticker",
+    "Institution": "institution",
+    "Account Type": "account type",
+    "Kind": "kind",
+    "Category": "vehicle",
+    "Subcategory": "vehicle category",
+    "Amount": "shares",
+    "Price": "price per share",
+    "Value": "value",
+    "Nominal Rate": "nominal rate",
+    "Nominal tax rate": "nominal tax rate",
+    "Amort": "amortization"
+  };
+
+  function finiteInlineNumber(input, label, opts = {}) {
+    const raw = String(input.value ?? "").trim();
+    if (raw === "") {
+      if (opts.allowBlank) return { ok: true, value: "" };
+      toast(`Enter ${label}`);
+      return { ok: false };
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+      toast(`Enter a valid ${label}`);
+      return { ok: false };
+    }
+    if (opts.min != null && value < opts.min) {
+      toast(`${label[0].toUpperCase() + label.slice(1)} must be ${opts.min} or more`);
+      return { ok: false };
+    }
+    if (opts.positive && value <= 0) {
+      toast(`${label[0].toUpperCase() + label.slice(1)} must be greater than 0`);
+      return { ok: false };
+    }
+    return { ok: true, value };
+  }
+
+  function optionalInlineNumber(input, label, opts = {}) {
+    if (input.disabled || String(input.value ?? "").trim() === "") return true;
+    return finiteInlineNumber(input, label, opts).ok;
+  }
+
+  function wrapInlineControl(control, cls) {
+    const wrap = el("span", cls || "inline-cell-editor");
+    wrap.appendChild(control);
+    return wrap;
+  }
+
+  function createInlineInput(value, attrs = {}) {
+    const inputEl = el("input");
+    inputEl.value = value ?? "";
+    Object.entries(attrs).forEach(([key, val]) => {
+      if (val != null) inputEl.setAttribute(key, val);
+    });
+    return inputEl;
+  }
+
+  function createLedgerInlineEditor(inv, config) {
+    const field = config.field;
+    const label = INLINE_CELL_LABELS[field] || field;
+    const textField = (value, attrs, read) => {
+      const inputEl = createInlineInput(value, { type: "text", ...attrs });
+      return {
+        node: wrapInlineControl(inputEl),
+        focusEl: inputEl,
+        commit: () => read(inputEl)
+      };
+    };
+    const numberField = (value, attrs, read) => {
+      const inputEl = createInlineInput(value, { type: "number", ...attrs });
+      return {
+        node: wrapInlineControl(inputEl),
+        focusEl: inputEl,
+        commit: () => read(inputEl)
+      };
+    };
+
+    if (field === "Ticker") {
+      return textField(inv.Ticker, {}, inputEl => {
+        const ticker = inputEl.value.trim().toUpperCase();
+        if (!ticker) { toast("Ticker is required"); return false; }
+        const update = { "Ticker": ticker };
+        const fixed = fixedPriceForTicker(ticker);
+        if (fixed != null) update["Value"] = Number(inv.Amount) * fixed;
+        Data.update(inv.ID, update);
+        return true;
+      });
+    }
+
+    if (field === "Institution" || field === "Account Type" || field === "Category" || field === "Subcategory") {
+      const list = field === "Account Type" ? "dl-Account-Type" : `dl-${field}`;
+      return textField(inv[field], { list }, inputEl => {
+        Data.update(inv.ID, { [field]: inputEl.value });
+        return true;
+      });
+    }
+
+    if (field === "Kind") {
+      const select = el("select");
+      Data.KINDS.forEach(kind => {
+        const option = el("option");
+        option.value = kind;
+        option.textContent = kind;
+        if (inv.Kind === kind) option.selected = true;
+        select.appendChild(option);
+      });
+      return {
+        node: wrapInlineControl(select),
+        focusEl: select,
+        commitOnChange: true,
+        commit: () => {
+          Data.update(inv.ID, { "Kind": select.value });
+          return true;
+        }
+      };
+    }
+
+    if (field === "Amount") {
+      return numberField(inv.Amount, { step: "any", min: "0" }, inputEl => {
+        const parsed = finiteInlineNumber(inputEl, label, { positive: true });
+        if (!parsed.ok) return false;
+        const update = { "Amount": parsed.value };
+        const fixed = fixedPriceForTicker(inv.Ticker);
+        const pps = Data.pricePerShare(inv);
+        if (fixed != null) update["Value"] = parsed.value * fixed;
+        else if (pps !== "") update["Value"] = parsed.value * Number(pps);
+        Data.update(inv.ID, update);
+        return true;
+      });
+    }
+
+    if (field === "Price") {
+      const pps = Data.pricePerShare(inv);
+      return numberField(pps === "" ? "" : +pps.toFixed(6), { step: "any", min: "0", placeholder: "$/share" }, inputEl => {
+        const parsed = finiteInlineNumber(inputEl, label, { min: 0, allowBlank: true });
+        if (!parsed.ok) return false;
+        const fixed = fixedPriceForTicker(inv.Ticker);
+        if (fixed != null) {
+          Data.update(inv.ID, { "Value": Number(inv.Amount) * fixed });
+          return true;
+        }
+        if (parsed.value === "") {
+          Data.update(inv.ID, { "Value": "" });
+          return true;
+        }
+        Data.update(inv.ID, { "Value": Number(inv.Amount) * parsed.value });
+        return true;
+      });
+    }
+
+    if (field === "Value") {
+      return numberField(inv.Value === "" ? "" : inv.Value, { step: "any", min: "0", placeholder: "unpriced" }, inputEl => {
+        const parsed = finiteInlineNumber(inputEl, label, { min: 0, allowBlank: true });
+        if (!parsed.ok) return false;
+        const fixed = fixedPriceForTicker(inv.Ticker);
+        Data.update(inv.ID, { "Value": fixed == null ? parsed.value : Number(inv.Amount) * fixed });
+        return true;
+      });
+    }
+
+    if (field === "Nominal Rate") {
+      return numberField(inv["Nominal Rate"], { step: "0.005" }, inputEl => {
+        const parsed = finiteInlineNumber(inputEl, label);
+        if (!parsed.ok) return false;
+        Data.update(inv.ID, { "Nominal Rate": parsed.value });
+        return true;
+      });
+    }
+
+    if (field === "Nominal tax rate") {
+      const tax = removableRate(inv["Nominal tax rate"]);
+      return {
+        node: wrapInlineControl(tax.wrap),
+        focusEl: tax.input,
+        commit: () => {
+          if (!optionalInlineNumber(tax.input, label, { min: 0 })) return false;
+          Data.update(inv.ID, { "Nominal tax rate": tax.read() });
+          return true;
+        }
+      };
+    }
+
+    if (field === "Amort" && inv.Kind === "Debt") {
+      const amMonths = removableNumber(inv["Amort Months"], {
+        step: "1", min: "0", placeholder: "mo",
+        removeTitle: "Remove months left", addTitle: "Add months left"
+      });
+      const amPay = removableNumber(inv["Amort Payment"], {
+        step: "any", min: "0", placeholder: "$/mo",
+        removeTitle: "Remove monthly payment", addTitle: "Add monthly payment"
+      });
+      const amortWrap = el("span", "amort-field");
+      amortWrap.appendChild(amMonths.wrap);
+      amortWrap.appendChild(amPay.wrap);
+      wireAutoAmortPayment({
+        kindInput: { value: "Debt", addEventListener: () => {} },
+        monthsInput: amMonths.input,
+        paymentControl: amPay,
+        paymentInput: amPay.input,
+        dependencyInputs: [],
+        principal: () => Math.abs(Data.presentValue(inv, false)),
+        annualRate: () => Number(inv["Nominal Rate"]) || 0
+      });
+      return {
+        node: wrapInlineControl(amortWrap, "inline-cell-editor inline-amort-editor"),
+        focusEl: amMonths.input,
+        commit: () => {
+          if (!optionalInlineNumber(amMonths.input, "amortization months", { min: 0 })) return false;
+          if (!optionalInlineNumber(amPay.input, "amortization payment", { min: 0 })) return false;
+          Data.update(inv.ID, {
+            "Amort Months": amMonths.read(),
+            "Amort Payment": amPay.read()
+          });
+          return true;
+        }
+      };
+    }
+
+    return null;
+  }
+
+  function startLedgerCellEdit(td, inv, config) {
+    if (ui.editingId != null) return;
+    if (activeInlineEditor && !activeInlineEditor.cell.isConnected) activeInlineEditor = null;
+    if (activeInlineEditor) {
+      if (activeInlineEditor.cell === td) return;
+      activeInlineEditor.commit();
+      if (!td.isConnected) return;
+    }
+
+    const editor = createLedgerInlineEditor(inv, config);
+    if (!editor) return;
+
+    const original = td.innerHTML;
+    td.innerHTML = "";
+    td.classList.add("inline-editing");
+    td.appendChild(editor.node);
+
+    let done = false;
+    const restore = () => {
+      td.innerHTML = original;
+      td.classList.remove("inline-editing", "inline-invalid");
+    };
+    const finish = save => {
+      if (done) return;
+      if (save) {
+        td.classList.remove("inline-invalid");
+        if (!editor.commit()) {
+          td.classList.add("inline-invalid");
+          if (editor.focusEl) {
+            editor.focusEl.focus();
+            if (typeof editor.focusEl.select === "function") editor.focusEl.select();
+          }
+          return;
+        }
+      } else {
+        restore();
+      }
+      done = true;
+      activeInlineEditor = null;
+    };
+    activeInlineEditor = { cell: td, commit: () => finish(true), cancel: () => finish(false) };
+
+    editor.node.addEventListener("click", e => e.stopPropagation());
+    editor.node.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        finish(false);
+      } else if (e.key === "Enter" && e.target.tagName !== "BUTTON") {
+        e.preventDefault();
+        finish(true);
+      }
+    });
+    editor.node.addEventListener("focusout", () => {
+      setTimeout(() => {
+        if (!done && !editor.node.contains(document.activeElement)) finish(true);
+      }, 0);
+    });
+    if (editor.commitOnChange) {
+      editor.focusEl.addEventListener("change", () => finish(true));
+    }
+    setTimeout(() => {
+      if (editor.focusEl) {
+        editor.focusEl.focus();
+        if (typeof editor.focusEl.select === "function") editor.focusEl.select();
+      }
+    }, 0);
+  }
+
+  function makeLedgerCellEditable(td, inv, config) {
+    if (!td) return;
+    const label = INLINE_CELL_LABELS[config.field] || config.field;
+    td.classList.add("ledger-editable-cell");
+    td.dataset.editField = config.field;
+    td.tabIndex = 0;
+    td.setAttribute("role", "button");
+    td.setAttribute("aria-label", `Edit ${label} for ${positionLabel(inv)}`);
+    td.title = `Click to edit ${label}`;
+    td.addEventListener("click", () => startLedgerCellEdit(td, inv, config));
+    td.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " " || e.key === "F2") {
+        e.preventDefault();
+        startLedgerCellEdit(td, inv, config);
+      }
+    });
+  }
+
   // A read-only ledger row, with Edit / remove actions.
   function displayRow(inv) {
     const tr = el("tr");
@@ -1236,10 +1861,13 @@
     const kindPill = `<span class="tag-pill ${debt ? "kind-debt" : "kind-asset"}">${inv.Kind}</span>`;
     const valMag = Data.presentValue(inv, false);
     const valCell = inv.Value === ""
-      ? `<span style="color:var(--faint)" title="unpriced — valued at $1/share">${fmt$cents(debt ? -valMag : valMag)}*</span>`
+      ? `<span style="color:var(--faint)" title="unpriced — using fallback valuation">${fmt$cents(debt ? -valMag : valMag)}*</span>`
       : (debt ? `<span class="kind-debt">−${fmt$cents(valMag)}</span>` : fmt$cents(inv.Value));
     const pps = Data.pricePerShare(inv);
     const priceCell = pps === "" ? `<span style="color:var(--faint)">—</span>` : fmt$cents(pps);
+    const amountCell = moneyHidden()
+      ? AMOUNT_MASK
+      : inv.Amount.toLocaleString(undefined, { maximumFractionDigits: 4 });
     const taxCell = inv["Nominal tax rate"] === ""
       ? `<span style="color:var(--faint)" title="tax doesn't apply">n/a</span>`
       : fmtPct(inv["Nominal tax rate"]);
@@ -1256,15 +1884,37 @@
       <td>${kindPill}</td>
       <td>${pill(inv.Category)}</td>
       <td>${pill(inv.Subcategory)}</td>
-      <td class="num">${inv.Amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+      <td class="num">${amountCell}</td>
       <td class="num">${priceCell}</td>
       <td class="num">${valCell}</td>
       <td class="num">${fmtPct(inv["Nominal Rate"])}</td>
       <td class="num">${taxCell}</td>
       <td>${amortCell}</td>
       <td class="row-actions"></td>`;
+    const editableFields = [
+      [1, "Ticker"],
+      [2, "Institution"],
+      [3, "Account Type"],
+      [4, "Kind"],
+      [5, "Category"],
+      [6, "Subcategory"],
+      [7, "Amount"],
+      [8, "Price"],
+      [9, "Value"],
+      [10, "Nominal Rate"],
+      [11, "Nominal tax rate"]
+    ];
+    editableFields
+      .filter(([, field]) => !moneyHidden() || (field !== "Amount" && field !== "Price" && field !== "Value"))
+      .forEach(([idx, field]) => makeLedgerCellEditable(tr.children[idx], inv, { field }));
+    if (debt && !moneyHidden()) makeLedgerCellEditable(tr.children[12], inv, { field: "Amort" });
     const edit = el("button", "edit-btn", "edit");
-    edit.addEventListener("click", () => { ui.editingId = inv.ID; renderAll(); });
+    if (moneyHidden()) {
+      edit.disabled = true;
+      edit.title = "Turn off privacy mode to use the full row editor";
+    } else {
+      edit.addEventListener("click", () => { ui.editingId = inv.ID; renderAll(); });
+    }
     const del = el("button", "del-btn ghost-danger", "remove");
     del.addEventListener("click", () => Data.remove(inv.ID));
     tr.lastElementChild.appendChild(edit);
@@ -1423,14 +2073,22 @@
     const sel = $("#copy-select");
     if (!sel) return;
     sel.innerHTML = "";
-    Portfolios.list().forEach(c => {
+    const copies = Portfolios.list();
+    const active = copies.find(c => c.active);
+    const context = $("#settings-active-portfolio");
+    if (context) {
+      context.textContent = active
+        ? `${active.name} · ${active.count} position${active.count === 1 ? "" : "s"}`
+        : "";
+    }
+    copies.forEach(c => {
       const o = el("option");
       o.value = c.id;
       o.textContent = `${c.name} · ${c.count} position${c.count === 1 ? "" : "s"}`;
       if (c.active) o.selected = true;
       sel.appendChild(o);
     });
-    $("#copy-del").disabled = Portfolios.list().length <= 1 && Data.all().length === 0;
+    $("#copy-del").disabled = copies.length <= 1 && Data.all().length === 0;
   }
 
   // Flash the "saved" badge dark for a beat, then let CSS ease it back to bright
@@ -1449,7 +2107,7 @@
     $("#copy-select").addEventListener("change", e => {
       saveUiState();
       Portfolios.switchTo(e.target.value);
-      loadActiveContributionState();
+      loadActivePortfolioUiState();
       syncProjectionControlsToDom();
       renderAll();
     });
@@ -1458,14 +2116,17 @@
       if (name === null) return;
       Portfolios.create(name);
       resetContributionState();
+      resetFloatPositionState();
       saveUiState();
       renderAll();
       toast("New portfolio created");
     });
     $("#copy-dup").addEventListener("click", () => {
       const contributionState = serializeContributionState();
+      const floatPositions = serializeFloatPositionState();
       Portfolios.duplicate();
       applyContributionState(contributionState);
+      applyFloatPositionState({ floatPositions });
       saveUiState();
       renderAll();
       toast(`Duplicated → "${Portfolios.activeName()}"`);
@@ -1480,7 +2141,7 @@
     $("#copy-del").addEventListener("click", () => {
       if (!confirm(`Delete "${Portfolios.activeName()}"? This can't be undone.`)) return;
       Portfolios.remove(Portfolios.activeId());
-      loadActiveContributionState();
+      loadActivePortfolioUiState();
       syncProjectionControlsToDom();
       saveUiState();
       renderAll();
@@ -1549,11 +2210,13 @@
 
       const amtInput = el("input", "contrib-amount");
       amtInput.type = "number"; amtInput.min = "0"; amtInput.step = "any";
-      amtInput.value = on ? +exact.toFixed(2) : "";
-      amtInput.placeholder = "$/mo";
-      amtInput.disabled = !on;
+      amtInput.value = !moneyHidden() && on ? +exact.toFixed(2) : "";
+      amtInput.placeholder = moneyHidden() ? MONEY_MASK : "$/mo";
+      amtInput.disabled = moneyHidden() || !on;
       amtInput.setAttribute("aria-label", `Monthly contribution for ${positionLabel(inv)}`);
-      amtInput.title = on ? "Exact monthly contribution for this position" : "Turn this position on to edit its contribution";
+      amtInput.title = moneyHidden()
+        ? "Turn off privacy mode to edit this monthly contribution"
+        : on ? "Exact monthly contribution for this position" : "Turn this position on to edit its contribution";
       const commitAmount = () => {
         if (!ui.contribTouched) {
           seedExactContribAmounts(perTarget);
@@ -1697,18 +2360,31 @@
     const anyDebt = Data.all().some(Data.isDebt);
     section.style.display = anyDebt ? "block" : "none";
     if (!anyDebt) return;
-    hBars($("#debt-bars"), Data.groupBy("Ticker", ui.taxOn, Data.isDebt));
-    hBars($("#debt-inst-bars"), Data.groupBy("Institution", ui.taxOn, Data.isDebt));
+    const owed = Data.debtTotal(ui.taxOn);
+    hBars($("#debt-bars"), Data.groupBy("Ticker", ui.taxOn, Data.isDebt), {
+      denominator: owed,
+      denominatorLabel: "total debt owed"
+    });
+    hBars($("#debt-inst-bars"), Data.groupBy("Institution", ui.taxOn, Data.isDebt), {
+      denominator: owed,
+      denominatorLabel: "total debt owed"
+    });
   }
 
   /* ---------- master render ---------- */
 
   function renderAll() {
+    syncPrivacyControlToDom();
+    if (moneyHidden()) {
+      ui.editingId = null;
+      activeInlineEditor = null;
+    }
     const hasData = Data.all().length > 0;
     $("#dashboard").style.display = hasData ? "block" : "none";
     $("#hero-empty").style.display = hasData ? "none" : "block";
     renderCopyBar();
     renderTable();
+    renderHeroDateTime();
     if (!hasData) { renderContribChips({ perTarget: 0, count: 0, total: 0 }); return; }
 
     syncContribIds();
@@ -1756,18 +2432,107 @@
     ASSET_DIMS.forEach(dim =>
       donut(grid, "% by " + dimLabel(dim), Data.groupBy(dim, ui.taxOn, Data.isAsset), "invested"));
 
-    hBars($("#ticker-bars"), Data.groupBy("Ticker", ui.taxOn, Data.isAsset));
-    stackBars($("#xtab-account-category"), Data.crossTab("Account Type", "Category", ui.taxOn, Data.isAsset));
-    stackBars($("#xtab-institution-account"), Data.crossTab("Institution", "Account Type", ui.taxOn, Data.isAsset));
+    hBars($("#ticker-bars"), Data.groupBy("Ticker", ui.taxOn, Data.isAsset), {
+      denominator: invested,
+      denominatorLabel: "total invested assets"
+    });
+    institutionAccountBars($("#xtab-institution-account"), Data.crossTab("Institution", "Account Type", ui.taxOn, Data.isAsset), invested);
 
     renderDebts();
+  }
+
+  /* ---------- settings view ---------- */
+
+  let settingsLastFocus = null;
+
+  function settingsFocusables(view) {
+    return [...view.querySelectorAll([
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled]):not([type='hidden'])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(","))].filter(node => {
+      const style = window.getComputedStyle(node);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+  }
+
+  function setSettingsOpen(open, { restoreFocus = true } = {}) {
+    const view = $("#settings-view");
+    const toggle = $("#ops-menu-toggle");
+    const backdrop = $("#settings-backdrop");
+    if (!view || !toggle) return;
+    if (open) {
+      settingsLastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : toggle;
+      if (backdrop) {
+        backdrop.hidden = true;
+        backdrop.classList.remove("is-open");
+      }
+      document.body.classList.add("settings-open");
+      view.classList.add("is-open");
+      view.setAttribute("aria-hidden", "false");
+      view.inert = false;
+      view.removeAttribute("inert");
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-label", "Close portfolio settings");
+      toggle.setAttribute("title", "Close portfolio settings");
+      requestAnimationFrame(() => {
+        toggle.focus();
+      });
+      return;
+    }
+    document.body.classList.remove("settings-open");
+    view.classList.remove("is-open");
+    if (backdrop) {
+      backdrop.classList.remove("is-open");
+      backdrop.hidden = true;
+    }
+    view.setAttribute("aria-hidden", "true");
+    view.inert = true;
+    view.setAttribute("inert", "");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "Open portfolio settings");
+    toggle.setAttribute("title", "Open portfolio settings");
+    if (restoreFocus && settingsLastFocus && typeof settingsLastFocus.focus === "function") {
+      settingsLastFocus.focus();
+    }
+  }
+
+  function wireSettingsView() {
+    const view = $("#settings-view");
+    const toggle = $("#ops-menu-toggle");
+    const backdrop = $("#settings-backdrop");
+    const emptyOpen = $("#empty-open-controls");
+    if (!view || !toggle) return;
+    toggle.addEventListener("click", () => setSettingsOpen(toggle.getAttribute("aria-expanded") !== "true"));
+    if (backdrop) backdrop.addEventListener("click", () => setSettingsOpen(false));
+    if (emptyOpen) emptyOpen.addEventListener("click", () => setSettingsOpen(true, { restoreFocus: false }));
+    document.addEventListener("keydown", e => {
+      if (!view.classList.contains("is-open")) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSettingsOpen(false);
+      }
+    });
   }
 
   /* ---------- controls wiring ---------- */
 
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
+    const privacyToggle = $("#privacy-toggle");
     syncProjectionControlsToDom();
+    if (privacyToggle) {
+      privacyToggle.addEventListener("click", () => {
+        ui.privacyMode = !ui.privacyMode;
+        if (ui.privacyMode) ui.editingId = null;
+        saveUiState();
+        renderAll();
+        toast(ui.privacyMode ? "Monetary amounts hidden" : "Monetary amounts visible");
+      });
+    }
     $("#proj-view-detailed").addEventListener("click", () => {
       ui.projectionView = "detailed";
       saveUiState();
@@ -1783,6 +2548,13 @@
       saveUiState();
       renderAll();
     });
+    // Theme picker — pure CSS swap via html[data-theme], no re-render needed.
+    document.querySelectorAll(".theme-toggle button").forEach(btn =>
+      btn.addEventListener("click", () => {
+        ui.theme = coerceTheme(btn.dataset.themeChoice);
+        syncThemeToDom();
+        saveUiState();
+      }));
     years.addEventListener("input", () => {
       ui.years = rangeValue(years.value, RANGE_LIMITS.years);
       years.value = String(ui.years);
@@ -1929,13 +2701,14 @@
     fetchBtn.addEventListener("click", async () => {
       const sym = $("#f-ticker").value.trim().toUpperCase();
       if (!sym) { toast("Enter a ticker first"); $("#f-ticker").focus(); return; }
+      if (moneyHidden()) { toast("Turn off privacy mode to fetch a visible price"); return; }
       const label = fetchBtn.textContent;
       fetchBtn.disabled = true; fetchBtn.textContent = "…";
       try {
         const q = await Prices.quote(sym);
         $("#f-price").value = q.price;
         refreshFormAmortPayment();
-        toast(`${q.ticker} · $${q.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} · ${q.source}`);
+        toast(`${q.ticker} · ${fmt$cents(q.price)} · ${q.source}`);
       } catch {
         toast(`No live price for ${sym} — enter it manually`);
         $("#f-price").focus();
@@ -1989,6 +2762,68 @@
     return Data.parseText(text);
   }
 
+  // Re-price every auto-priced holding: fixed-price tickers like USD plus
+  // positions that look like securities (see looksTradable). Call-signs like
+  // HOUSE/DEBT and cash/loans keep their manual value.
+  async function refreshLivePrices({ manual = true } = {}) {
+    const refreshBtn = $("#refresh-prices");
+    const invs = Data.all();
+    const notify = manual;
+    if (invs.length === 0) {
+      updateLivePriceStatus("No positions");
+      if (notify) toast("Nothing to price yet");
+      return { ok: false, priced: 0, total: 0 };
+    }
+    const tradable = invs.filter(shouldAutoPrice);
+    if (tradable.length === 0) {
+      updateLivePriceStatus("Manual values");
+      if (notify) toast("No auto-priced tickers — values are manual");
+      return { ok: false, priced: 0, total: 0 };
+    }
+    const label = refreshBtn ? refreshBtn.textContent : "";
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "Pricing…";
+    }
+    updateLivePriceStatus("Refreshing prices");
+    try {
+      const quotes = await Prices.quoteMany(tradable.map(i => i.Ticker));
+      let priced = 0;
+      tradable.forEach(inv => {
+        const q = quotes.get((inv.Ticker || "").toUpperCase());
+        if (q) { Data.update(inv.ID, { "Value": inv.Amount * q.price }); priced++; }
+      });
+      const missed = tradable.length - priced;
+      if (priced) {
+        markLivePriceRefreshSuccess();
+        if (notify) toast(`Priced ${priced}/${tradable.length}${missed ? ` · ${missed} unresolved` : ""}`);
+        return { ok: true, priced, total: tradable.length };
+      }
+
+      updateLivePriceStatus("No prices found");
+      if (notify) toast("No prices found — enter values manually");
+      return { ok: false, priced, total: tradable.length };
+    } catch (err) {
+      updateLivePriceStatus("Refresh failed");
+      if (notify) toast("Price refresh failed: " + err.message);
+      else console.warn("Initial price refresh failed:", err);
+      return { ok: false, error: err, priced: 0, total: tradable.length };
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = label;
+      }
+    }
+  }
+
+  function refreshPricesAfterLoad() {
+    updateLivePriceStatus();
+    // Throttle only the page-load refresh so reloads do not hammer public quote
+    // APIs; the manual Refresh prices button intentionally bypasses this.
+    if (shouldSkipPageLoadPriceRefresh()) return;
+    window.setTimeout(() => { refreshLivePrices({ manual: false }); }, 0);
+  }
+
   function wireIO() {
     $("#copy-json").addEventListener("click", async () => {
       const backup = Data.toJSON();
@@ -2009,6 +2844,7 @@
         const investments = parseClipboardBackup(await readClipboardText());
         Portfolios.importCopy("Imported from clipboard", investments);
         resetContributionState();
+        resetFloatPositionState();
         saveUiState();
         renderAll();
         toast(`Imported ${Data.all().length} positions into "${Portfolios.activeName()}"`);
@@ -2020,34 +2856,8 @@
       }
     }));
 
-    // Re-price every auto-priced holding: fixed-price tickers like USD plus
-    // positions that look like securities (see looksTradable). Call-signs like
-    // HOUSE/DEBT and cash/loans keep their manual value.
     const refreshBtn = $("#refresh-prices");
-    refreshBtn.addEventListener("click", async () => {
-      const invs = Data.all();
-      if (invs.length === 0) { toast("Nothing to price yet"); return; }
-      const tradable = invs.filter(shouldAutoPrice);
-      if (tradable.length === 0) { toast("No auto-priced tickers — values are manual"); return; }
-      const label = refreshBtn.textContent;
-      refreshBtn.disabled = true; refreshBtn.textContent = "Pricing…";
-      try {
-        const quotes = await Prices.quoteMany(tradable.map(i => i.Ticker));
-        let priced = 0;
-        tradable.forEach(inv => {
-          const q = quotes.get((inv.Ticker || "").toUpperCase());
-          if (q) { Data.update(inv.ID, { "Value": inv.Amount * q.price }); priced++; }
-        });
-        const missed = tradable.length - priced;
-        toast(priced
-          ? `Priced ${priced}/${tradable.length}${missed ? ` · ${missed} unresolved` : ""}`
-          : "No prices found — enter values manually");
-      } catch (err) {
-        toast("Price refresh failed: " + err.message);
-      } finally {
-        refreshBtn.disabled = false; refreshBtn.textContent = label;
-      }
-    });
+    refreshBtn.addEventListener("click", () => refreshLivePrices());
 
     $("#seed-btn").addEventListener("click", () => {
       // Amount = shares; Value = shares × an approximate price, stamped at entry.
@@ -2063,6 +2873,7 @@
         { "ID": 8, "Ticker": "ETH", "Institution": "Coinbase",  "Account Type": "Wallet",    "Kind": "Asset", "Amount": 5,   "Value": 8550,  "Category": "Crypto", "Subcategory": "",              "Nominal Rate": 0.12, "Nominal tax rate": 0.15 }
       ]);
       resetContributionState();
+      resetFloatPositionState();
       saveUiState();
       renderAll();
       toast("Sample portfolio loaded");
@@ -2072,20 +2883,23 @@
   /* ---------- boot ---------- */
 
   loadStoredProjectionState();
+  wireSettingsView();
   wireControls();
   wireForm();
   wireIO();
   wireCopies();
+  startHeroClock();
 
   // Portfolios.init() restores the active copy from localStorage (seeding a
   // "Default" from tickers.json only on first run), then we subscribe the
   // renderer so it draws once against restored state.
   Portfolios.init().then(() => {
-    loadActiveContributionState();
+    loadActivePortfolioUiState();
     syncProjectionControlsToDom();
     Data.subscribe(renderAll);
     Data.subscribe(pulseSaved);   // subscribed after init, so boot's initial load doesn't pulse
     renderAll();
+    refreshPricesAfterLoad();
   });
 
 })();

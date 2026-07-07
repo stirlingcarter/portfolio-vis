@@ -28,7 +28,7 @@ then select `main` and `/ (root)`. No build step is required.
 The app is expected to work at a project Pages URL such as:
 
 ```
-https://stirlingcarter.github.io/portfolio-vis/
+https://your-github-user.github.io/portfolio-vis/
 ```
 
 Live pricing still depends on third-party browser fetches: CoinGecko is
@@ -40,7 +40,7 @@ falls back to manual entry.
 
 ```
 index.html    — page shell: layout, sections, form markup, control elements
-styles.css    — presentation styling only (petrol/brass theme, responsive)
+styles.css    — presentation styling only (4 themes: dark/white/sand/pink, responsive)
 data.js       — DATA LAYER: schema, store, derivations, projection math (zero DOM)
 prices.js     — PRICE LAYER: live quote lookups (Yahoo + CoinGecko), zero DOM/state
 portfolios.js — PERSISTENCE LAYER: named copies in localStorage, syncs with Data
@@ -143,8 +143,9 @@ automatically on return. It holds many named **copies** (portfolios), one active
 - `Portfolios` owns the collection; `Data` holds the *active* copy's positions
   in memory. Switching a copy calls `Data.loadArray`; every `Data` change mirrors
   back into the active copy and writes localStorage (`Data.subscribe`).
-- The copy bar (header) drives **New / Duplicate / Rename / Delete** and the
-  active-copy `<select>`. Default is a single copy named "Default".
+- The full-screen settings view opens from the hamburger button and drives
+  **New / Duplicate / Rename / Delete** plus the active-copy `<select>`.
+  Default is a single copy named "Default".
 - **First run only:** if there's no saved state, `Portfolios` seeds "Default" by
   fetching an adjacent `tickers.json` (works over HTTP; under `file://` the fetch
   is blocked and it starts empty). After that, localStorage is the source of
@@ -223,9 +224,10 @@ Two free, keyless sources resolve a ticker to a live USD price:
 Contract: `Prices.quote(ticker)` resolves `{ ticker, price, currency, source }`
 or **throws** — callers fall back to a user-entered price. `Prices.quoteMany`
 returns a `Map` of only what resolved (never throws). In the UI: the add form's
-**Fetch** button fills `$/share`, and the header's **Refresh prices** button
-re-prices every holding (`Value = shares × price`), leaving unresolvable tickers
-(cash, loans, unknown symbols) for manual entry.
+**Fetch** button fills `$/share`; the full-screen settings view keeps
+**Refresh prices** available and the app also attempts a throttled refresh after
+page load. Both paths re-price every holding (`Value = shares × price`), leaving
+unresolvable tickers (cash, loans, unknown symbols) for manual entry.
 
 ## Net worth vs. invested assets
 

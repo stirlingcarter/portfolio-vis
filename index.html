@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ColdData Ledger</title>
+<script>
+/* Apply the saved theme before first paint so light themes don't flash dark.
+   The choice itself lives with the other UI state in coldledger.ui.v1 (ui.js). */
+try {
+  var savedTheme = JSON.parse(localStorage.getItem("coldledger.ui.v1") || "{}").theme;
+  if (["white", "sand", "pink"].indexOf(savedTheme) >= 0) document.documentElement.dataset.theme = savedTheme;
+} catch (e) { /* private mode / malformed state — keep the default dark theme */ }
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -21,28 +29,147 @@
       <div class="wordmark">ColdData <em>Ledger</em></div>
       <div class="tagline">Local-first portfolio ledger</div>
     </div>
-    <div class="header-actions">
-      <button class="load-json" title="Import exported JSON from the clipboard">Import</button>
-      <button id="refresh-prices">Refresh prices</button>
-      <button id="copy-json" class="primary">Export</button>
+    <div class="header-actions" role="group" aria-label="Portfolio display controls">
+      <button id="privacy-toggle" class="menu-toggle privacy-toggle" type="button" aria-pressed="false" aria-label="Hide monetary amounts" title="Hide monetary amounts">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3.4 12s3.2-5.3 8.6-5.3 8.6 5.3 8.6 5.3-3.2 5.3-8.6 5.3S3.4 12 3.4 12Z"/>
+          <circle cx="12" cy="12" r="2.5"/>
+          <path class="privacy-slash" d="M5 19 19 5"/>
+        </svg>
+      </button>
+      <button id="ops-menu-toggle" class="menu-toggle" type="button" aria-controls="settings-view" aria-expanded="false" aria-label="Open portfolio settings" title="Open portfolio settings">
+        <span class="menu-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
     </div>
   </header>
 
-  <!-- ============ PORTFOLIO COPIES ============ -->
-  <div class="copy-bar">
-    <span class="copy-label">Portfolio</span>
-    <select id="copy-select" aria-label="Active portfolio"></select>
-    <button id="copy-new" title="Start a new empty portfolio">New</button>
-    <button id="copy-dup" title="Duplicate the current portfolio">Duplicate</button>
-    <button id="copy-rename" title="Rename the current portfolio">Rename</button>
-    <button id="copy-del" class="ghost-danger" title="Delete the current portfolio">Delete</button>
-    <span id="save-dot" class="save-dot" role="status" aria-label="Saved locally" title="Saved locally in this browser">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="10" fill="currentColor"/>
-        <path d="M7.5 12.4l3 3 6-6.6" stroke="#0d1512" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </span>
-  </div>
+  <div id="settings-backdrop" class="settings-backdrop" hidden></div>
+  <section id="settings-view" class="settings-view" role="region" aria-label="Portfolio settings" aria-hidden="true" inert>
+    <div class="settings-inner">
+      <!-- ===== ledger + add form ===== -->
+      <section class="settings-ledger-section">
+        <div class="section-head">
+          <h2>Ledger</h2>
+          <span class="section-note">saved automatically · Export any time for a backup</span>
+        </div>
+        <div class="panel settings-ledger-panel">
+          <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add your first below.</div>
+          <div class="ledger-controls" id="ledger-controls">
+            <label class="field ledger-sort-field">
+              <span>Sort rows</span>
+              <select id="ledger-sort" aria-label="Ledger sort">
+                <option value="ID">ID</option>
+                <option value="Ticker">Ticker</option>
+                <option value="Institution">Institution</option>
+                <option value="Account Type">Account type</option>
+                <option value="Kind">Kind</option>
+                <option value="Category">Vehicle</option>
+                <option value="Subcategory">Vehicle category</option>
+              </select>
+            </label>
+            <button id="ledger-sort-dir" type="button" aria-label="Reverse ledger sort">A-Z</button>
+            <label class="toggle">
+              <input type="checkbox" id="ledger-by-institution">
+              <span class="track"></span>
+              <span class="t-label">By institution</span>
+            </label>
+          </div>
+          <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
+
+          <div class="add-form settings-add-form">
+            <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
+            <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
+            <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
+            <label class="field"><span>Kind</span><select id="f-kind"><option value="Asset">Asset</option><option value="Debt">Debt</option></select></label>
+            <label class="field"><span>Amount (shares)</span><input type="number" id="f-amount" min="0" step="any" placeholder="12.5"></label>
+            <label class="field"><span>Price ($/share)</span>
+              <span class="price-field">
+                <input type="number" id="f-price" min="0" step="any" placeholder="480.20">
+                <button type="button" id="fetch-price" class="fetch-btn" title="Fetch live price for this ticker">Fetch</button>
+              </span>
+            </label>
+            <label class="field"><span>Vehicle</span><input type="text" id="f-category" list="dl-Category" placeholder="Stock"></label>
+            <label class="field"><span>Vehicle category</span><input type="text" id="f-subcategory" list="dl-Subcategory" placeholder="Growth Stocks"></label>
+            <label class="field"><span>Nominal rate</span><input type="number" id="f-rate" step="0.005" value="0.08"></label>
+            <label class="field"><span>Nominal tax rate</span>
+              <span class="tax-field">
+                <input type="number" id="f-tax" step="0.005" value="0.1">
+                <button type="button" id="f-tax-toggle" class="mini-btn" title="This position isn't taxed">−</button>
+              </span>
+            </label>
+            <label class="field amort-only" hidden><span>Debt: months left</span>
+              <span class="tax-field">
+                <input type="number" id="f-amort-months" min="0" step="1" placeholder="24 · blank = carries">
+                <button type="button" id="f-amort-months-toggle" class="mini-btn" title="Remove months left">−</button>
+              </span>
+            </label>
+            <label class="field amort-only" hidden><span>Debt: monthly payment</span>
+              <span class="tax-field">
+                <input type="number" id="f-amort-pay" min="0" step="any" placeholder="500">
+                <button type="button" id="f-amort-pay-toggle" class="mini-btn" title="Remove monthly payment">−</button>
+              </span>
+            </label>
+            <div class="form-actions">
+              <button id="add-btn" class="primary">Add position</button>
+              <span class="form-hint">Ticker or a short call-sign (HOUSE, DEBT) · Fetch tries a live price when it looks tradable · leave price blank to enter your own</span>
+            </div>
+          </div>
+
+          <datalist id="dl-Institution"></datalist>
+          <datalist id="dl-Account-Type"></datalist>
+          <datalist id="dl-Category"></datalist>
+          <datalist id="dl-Subcategory"></datalist>
+        </div>
+      </section>
+
+      <div class="settings-grid">
+        <div class="settings-block settings-copy-block">
+          <div class="settings-block-head">
+            <span>Accessing</span>
+            <span id="settings-active-portfolio" class="settings-context"></span>
+          </div>
+          <div class="copy-bar settings-copy-bar">
+            <span class="copy-label">Portfolio</span>
+            <select id="copy-select" aria-label="Active portfolio"></select>
+            <button id="copy-new" title="Start a new empty portfolio">New</button>
+            <button id="copy-dup" title="Duplicate the current portfolio">Duplicate</button>
+            <button id="copy-rename" title="Rename the current portfolio">Rename</button>
+            <button id="copy-del" class="ghost-danger" title="Delete the current portfolio">Delete</button>
+            <span id="save-dot" class="save-dot" role="status" aria-label="Saved locally" title="Saved locally in this browser">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" fill="currentColor"/>
+                <path d="M7.5 12.4l3 3 6-6.6" stroke="#0d1512" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="settings-block">
+          <div class="settings-block-head">
+            <span>Clipboard &amp; pricing</span>
+          </div>
+          <div class="settings-actions">
+            <button class="load-json" title="Import exported JSON from the clipboard">Import</button>
+            <button id="refresh-prices">Refresh prices</button>
+            <button id="copy-json" class="primary">Export</button>
+          </div>
+          <div id="live-price-status" class="live-price-status" role="status" aria-live="polite">Not updated yet</div>
+        </div>
+
+        <div class="settings-block">
+          <div class="settings-block-head">
+            <span>Appearance</span>
+          </div>
+          <div class="theme-toggle" role="group" aria-label="Color theme">
+            <button type="button" data-theme-choice="dark" aria-pressed="true" title="Dark theme"><span class="theme-swatch" aria-hidden="true"></span>Dark</button>
+            <button type="button" data-theme-choice="white" aria-pressed="false" title="White theme"><span class="theme-swatch" aria-hidden="true"></span>White</button>
+            <button type="button" data-theme-choice="sand" aria-pressed="false" title="Sand theme"><span class="theme-swatch" aria-hidden="true"></span>Sand</button>
+            <button type="button" data-theme-choice="pink" aria-pressed="false" title="Pink theme"><span class="theme-swatch" aria-hidden="true"></span>Pink</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ============ EMPTY STATE ============ -->
   <div id="hero-empty" class="panel empty-state" style="margin-top:44px; display:none;">
@@ -53,7 +180,7 @@
     <p>Add positions below, or import a copied backup. Every chart on this
        page is built from the tags you assign: institution, account type, vehicle, vehicle category, ticker.</p>
     <div class="btn-row">
-      <button class="load-json" title="Import exported JSON from the clipboard">Import from clipboard</button>
+      <button id="empty-open-controls" title="Open portfolio settings">Open settings</button>
       <button id="seed-btn">Load sample portfolio</button>
     </div>
   </div>
@@ -64,7 +191,7 @@
     <section class="hero-stage" aria-labelledby="hero-title">
       <div class="hero-copy">
         <div class="eyebrow">portfolio</div>
-        <h1 id="hero-title">Hi, Stir</h1>
+        <h1 id="hero-title" class="hero-datetime-title"></h1>
         <div class="hero-metrics" id="hero-metrics"></div>
       </div>
       <div class="hero-visual panel" id="hero-visual" aria-label="Portfolio spatial summary"></div>
@@ -93,24 +220,13 @@
       </div>
     </div>
 
-    <!-- ===== new spatial explorations ===== -->
+    <!-- ===== balance sheet: assets, debts, net worth ===== -->
     <section>
       <div class="section-head">
-        <h2>Capital terrarium</h2>
-        <div class="head-right biome-head-controls">
-          <span class="section-note" id="biome-mode-note">each holding sized by value and grown from ledger semantics</span>
-          <button type="button" id="biome-whistle" class="whistle-toggle" aria-pressed="false" aria-label="Cycle terrarium layout" title="Cycle terrarium layout">
-            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-              <path d="M8 18.2c0-4.8 3.9-8.7 8.7-8.7h6.5l2.8-3.1 1.5 1.3-2.4 3.7c1.6 1.5 2.6 3.6 2.6 6 0 4.7-3.8 8.5-8.5 8.5h-2.4C11.9 25.9 8 22.4 8 18.2Zm4.1-.1c0 2.1 2.1 3.8 4.7 3.8h2.4c2.5 0 4.5-2 4.5-4.5S21.7 13 19.2 13h-2.5c-2.6 0-4.6 2.3-4.6 5.1Z"/>
-              <path d="M3.9 13.3h5.5v4.1H3.9c-1.3 0-2.3-.9-2.3-2.1s1-2 2.3-2Z"/>
-              <circle cx="19.1" cy="17.4" r="2.2"/>
-            </svg>
-          </button>
-        </div>
+        <h2>Assets, debts &amp; net worth</h2>
+        <span class="section-note"></span>
       </div>
-      <div class="panel biome-panel">
-        <div id="biome-view" class="biome-view" aria-label="Entity visualization of portfolio holdings"></div>
-      </div>
+      <div class="panel" id="balance-sheet"></div>
     </section>
 
     <!-- ===== projection ===== -->
@@ -160,13 +276,24 @@
       </div>
     </section>
 
-    <!-- ===== balance sheet: assets, debts, net worth ===== -->
+    <!-- ===== new spatial explorations ===== -->
     <section>
       <div class="section-head">
-        <h2>Assets, debts &amp; net worth</h2>
-        <span class="section-note"></span>
+        <h2>Capital terrarium</h2>
+        <div class="head-right biome-head-controls">
+          <span class="section-note" id="biome-mode-note">each holding sized by value and grown from ledger semantics</span>
+          <button type="button" id="biome-whistle" class="whistle-toggle" aria-pressed="false" aria-label="Cycle terrarium layout" title="Cycle terrarium layout">
+            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+              <path d="M8 18.2c0-4.8 3.9-8.7 8.7-8.7h6.5l2.8-3.1 1.5 1.3-2.4 3.7c1.6 1.5 2.6 3.6 2.6 6 0 4.7-3.8 8.5-8.5 8.5h-2.4C11.9 25.9 8 22.4 8 18.2Zm4.1-.1c0 2.1 2.1 3.8 4.7 3.8h2.4c2.5 0 4.5-2 4.5-4.5S21.7 13 19.2 13h-2.5c-2.6 0-4.6 2.3-4.6 5.1Z"/>
+              <path d="M3.9 13.3h5.5v4.1H3.9c-1.3 0-2.3-.9-2.3-2.1s1-2 2.3-2Z"/>
+              <circle cx="19.1" cy="17.4" r="2.2"/>
+            </svg>
+          </button>
+        </div>
       </div>
-      <div class="panel" id="balance-sheet"></div>
+      <div class="panel biome-panel">
+        <div id="biome-view" class="biome-view" aria-label="Entity visualization of portfolio holdings"></div>
+      </div>
     </section>
 
     <!-- ===== tag donuts (invested assets) ===== -->
@@ -191,15 +318,13 @@
         <h2>Weight &amp; composition</h2>
         <span class="section-note">invested assets · tag × tag</span>
       </div>
-      <div class="two-col">
+      <div class="two-col composition-grid">
         <div class="panel">
           <h3 class="panel-title">Assets by ticker</h3>
           <div id="ticker-bars"></div>
         </div>
         <div class="panel">
-          <h3 class="panel-title">Vehicle mix per account type</h3>
-          <div id="xtab-account-category"></div>
-          <h3 class="panel-title" style="margin-top:22px;">Account types per institution</h3>
+          <h3 class="panel-title">Account types per institution</h3>
           <div id="xtab-institution-account"></div>
         </div>
       </div>
@@ -224,82 +349,6 @@
     </section>
 
   </div><!-- /dashboard -->
-
-  <!-- ===== ledger + add form ===== -->
-  <section>
-    <div class="section-head">
-      <h2>Ledger</h2>
-      <span class="section-note">saved automatically · Export any time for a backup</span>
-    </div>
-    <div class="panel">
-      <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add your first below.</div>
-      <div class="ledger-controls" id="ledger-controls">
-        <label class="field ledger-sort-field">
-          <span>Sort rows</span>
-          <select id="ledger-sort" aria-label="Ledger sort">
-            <option value="ID">ID</option>
-            <option value="Ticker">Ticker</option>
-            <option value="Institution">Institution</option>
-            <option value="Account Type">Account type</option>
-            <option value="Kind">Kind</option>
-            <option value="Category">Vehicle</option>
-            <option value="Subcategory">Vehicle category</option>
-          </select>
-        </label>
-        <button id="ledger-sort-dir" type="button" aria-label="Reverse ledger sort">A-Z</button>
-        <label class="toggle">
-          <input type="checkbox" id="ledger-by-institution">
-          <span class="track"></span>
-          <span class="t-label">By institution</span>
-        </label>
-      </div>
-      <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
-
-      <div class="add-form">
-        <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
-        <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
-        <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
-        <label class="field"><span>Kind</span><select id="f-kind"><option value="Asset">Asset</option><option value="Debt">Debt</option></select></label>
-        <label class="field"><span>Amount (shares)</span><input type="number" id="f-amount" min="0" step="any" placeholder="12.5"></label>
-        <label class="field"><span>Price ($/share)</span>
-          <span class="price-field">
-            <input type="number" id="f-price" min="0" step="any" placeholder="480.20">
-            <button type="button" id="fetch-price" class="fetch-btn" title="Fetch live price for this ticker">Fetch</button>
-          </span>
-        </label>
-        <label class="field"><span>Vehicle</span><input type="text" id="f-category" list="dl-Category" placeholder="Stock"></label>
-        <label class="field"><span>Vehicle category</span><input type="text" id="f-subcategory" list="dl-Subcategory" placeholder="Growth Stocks"></label>
-        <label class="field"><span>Nominal rate</span><input type="number" id="f-rate" step="0.005" value="0.08"></label>
-        <label class="field"><span>Nominal tax rate</span>
-          <span class="tax-field">
-            <input type="number" id="f-tax" step="0.005" value="0.1">
-            <button type="button" id="f-tax-toggle" class="mini-btn" title="This position isn't taxed">−</button>
-          </span>
-        </label>
-        <label class="field amort-only" hidden><span>Debt: months left</span>
-          <span class="tax-field">
-            <input type="number" id="f-amort-months" min="0" step="1" placeholder="24 · blank = carries">
-            <button type="button" id="f-amort-months-toggle" class="mini-btn" title="Remove months left">−</button>
-          </span>
-        </label>
-        <label class="field amort-only" hidden><span>Debt: monthly payment</span>
-          <span class="tax-field">
-            <input type="number" id="f-amort-pay" min="0" step="any" placeholder="500">
-            <button type="button" id="f-amort-pay-toggle" class="mini-btn" title="Remove monthly payment">−</button>
-          </span>
-        </label>
-        <div class="form-actions">
-          <button id="add-btn" class="primary">Add position</button>
-          <span class="form-hint">Ticker or a short call-sign (HOUSE, DEBT) · Fetch tries a live price when it looks tradable · leave price blank to enter your own</span>
-        </div>
-      </div>
-
-      <datalist id="dl-Institution"></datalist>
-      <datalist id="dl-Account-Type"></datalist>
-      <datalist id="dl-Category"></datalist>
-      <datalist id="dl-Subcategory"></datalist>
-    </div>
-  </section>
 
 </div><!-- /wrap -->
 

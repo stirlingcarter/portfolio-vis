@@ -470,6 +470,7 @@ const Data = (() => {
   ------------------------------------ */
   function aggregateProjection(opts) {
     const { years, rate, taxOn } = opts;
+    const monthlyContribution = Math.max(0, Number(opts.monthlyContribution) || 0);
     const N = Math.max(1, Math.round(years * 12));
     const rm = (Number(rate) || 0) / 12;
     const assets = new Array(N + 1);
@@ -496,12 +497,16 @@ const Data = (() => {
     });
 
     for (let m = 1; m <= N; m++) {
-      assets[m] = Math.max(0, assets[m - 1] * (1 + rm));
+      assets[m] = Math.max(0, assets[m - 1] * (1 + rm) + monthlyContribution);
     }
     const months = Array.from({ length: N + 1 }, (_, m) => m);
     const debtRows = investments.filter(isDebt);
     return {
       months, assets, debts, rate: Number(rate) || 0,
+      contribution: {
+        monthly: monthlyContribution,
+        total: monthlyContribution * N
+      },
       debt: {
         amortized: debtRows.filter(isAmortized).length,
         carried: debtRows.filter(inv => !isAmortized(inv)).length
