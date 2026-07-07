@@ -45,7 +45,10 @@
   // Full dollars-and-cents — used in the ledger where exact valuations matter.
   const fmt$cents = v => moneyHidden() ? MONEY_MASK : "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = v => (v * 100).toFixed(1) + "%";
+  const fmtLeveragePct = v => Number.isFinite(v) ? fmtPct(v) : "∞%";
+  const fmtMultiple = v => Number.isFinite(v) ? v.toFixed(v >= 10 ? 1 : 2) + "x" : "∞x";
   const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
+  const slug = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   // Whether we should even attempt a live quote for a position. Call-signs like
   // HOUSE / DEBT / MORT and cash/loan/real-estate rows are user-valued, not
@@ -2466,6 +2469,41 @@
       </div>`;
   }
 
+  function renderLeverage() {
+    const wrap = $("#debt-leverage");
+    if (!wrap) return;
+    const leverage = Data.leverage(ui.taxOn);
+    const fill = Number.isFinite(leverage.margin) ? clamp(leverage.margin, 0, 1) : 1;
+    const levelClass = `level-${slug(leverage.level)}`;
+    const markers = Data.LEVERAGE_LEVELS
+      .filter(level => Number.isFinite(level.maxMargin) && level.maxMargin > 0)
+      .map(level => `<span class="leverage-marker" style="left:${(level.maxMargin * 100).toFixed(1)}%" title="${level.level} up to ${fmtLeveragePct(level.maxMargin)} margin"></span>`)
+      .join("");
+    const thresholdKey = Data.LEVERAGE_LEVELS
+      .filter(level => Number.isFinite(level.maxMargin) && level.maxMargin > 0)
+      .map(level => fmtLeveragePct(level.maxMargin))
+      .join(" / ");
+
+    wrap.innerHTML = `
+      <div class="leverage-headline">
+        <div>
+          <div class="leverage-k">Assets / net worth</div>
+          <div class="leverage-ratio">${fmtMultiple(leverage.ratio)}</div>
+        </div>
+        <span class="leverage-level ${levelClass}">${leverage.level}</span>
+      </div>
+      <div class="leverage-gauge" role="img" aria-label="Margin ${fmtLeveragePct(leverage.margin)}, level ${leverage.level}">
+        <div class="leverage-fill ${levelClass}" style="width:${(fill * 100).toFixed(1)}%"></div>
+        ${markers}
+      </div>
+      <div class="leverage-metrics">
+        <div><span>Margin</span><b>${fmtLeveragePct(leverage.margin)}</b></div>
+        <div><span>Debt</span><b>${fmt$full(leverage.debt)}</b></div>
+        <div><span>Assets</span><b>${fmt$full(leverage.assets)}</b></div>
+      </div>
+      <div class="leverage-note">margin = debt / assets · thresholds ${thresholdKey}${ui.taxOn ? " · post-tax" : ""}</div>`;
+  }
+
   function renderDebts() {
     const section = $("#debt-section");
     const anyDebt = Data.all().some(Data.isDebt);
@@ -2480,6 +2518,7 @@
       denominator: owed,
       denominatorLabel: "total debt owed"
     });
+    renderLeverage();
   }
 
   /* ---------- master render ---------- */

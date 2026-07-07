@@ -39,6 +39,17 @@ const Data = (() => {
   // The dimensions every breakdown chart is built on.
   const TAG_DIMENSIONS = ["Institution", "Account Type", "Kind", "Category", "Subcategory", "Ticker"];
 
+  const LEVERAGE_LEVELS = [
+    { level: "None", maxMargin: 0 },
+    { level: "Very Safe", maxMargin: 0.05 },
+    { level: "Safe", maxMargin: 0.15 },
+    { level: "Normal", maxMargin: 0.25 },
+    { level: "Moderate", maxMargin: 0.35 },
+    { level: "Aggressive", maxMargin: 0.5 },
+    { level: "Very Aggressive", maxMargin: 0.7 },
+    { level: "Dangerous", maxMargin: Infinity }
+  ];
+
   /* ---------- store ---------- */
 
   let investments = [];
@@ -427,6 +438,21 @@ const Data = (() => {
   function assetTotal(taxOn) { return investments.filter(isAsset).reduce((s, i) => s + presentValue(i, taxOn), 0); }
   function debtTotal(taxOn) { return investments.filter(isDebt).reduce((s, i) => s + presentValue(i, taxOn), 0); }
 
+  function leverageLevel(debt, margin) {
+    if (debt <= 0) return LEVERAGE_LEVELS[0];
+    return LEVERAGE_LEVELS.find(level => margin <= level.maxMargin) || LEVERAGE_LEVELS[LEVERAGE_LEVELS.length - 1];
+  }
+
+  function leverage(taxOn) {
+    const assets = assetTotal(taxOn);
+    const debt = debtTotal(taxOn);
+    const net = assets - debt;
+    const margin = assets > 0 ? debt / assets : debt > 0 ? Infinity : 0;
+    const ratio = debt > 0 && net <= 0 ? Infinity : net > 0 ? assets / net : 1;
+    const level = leverageLevel(debt, margin);
+    return { assets, debt, net, margin, ratio, level: level.level, threshold: level.maxMargin };
+  }
+
   function debtWeightedRate(taxOn) {
     let weighted = 0;
     let totalWeight = 0;
@@ -595,9 +621,9 @@ const Data = (() => {
   }
 
   return {
-    FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS,
+    FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS, LEVERAGE_LEVELS,
     subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
     presentValue, netValue, taxRate, pricePerShare, inferAmortPayment, isAmortized, isAsset, isDebt,
-    total, assetTotal, debtTotal, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection
+    total, assetTotal, debtTotal, leverage, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection
   };
 })();

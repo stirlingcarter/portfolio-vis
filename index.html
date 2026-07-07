@@ -25,9 +25,7 @@ try {
 
   <header>
     <div>
-      <div class="eyebrow">Private portfolio lab</div>
       <div class="wordmark">ColdData <em>Ledger</em></div>
-      <div class="tagline">Local-first portfolio ledger</div>
     </div>
     <div class="header-actions">
       <div class="header-icon-cluster" role="group" aria-label="Portfolio controls">
@@ -332,7 +330,7 @@ try {
         <h2>Debts</h2>
         <span class="section-note">balances owed · excluded from the totals above</span>
       </div>
-      <div class="two-col">
+      <div class="two-col debt-grid">
         <div class="panel">
           <h3 class="panel-title">Debt by call-sign</h3>
           <div id="debt-bars"></div>
@@ -340,6 +338,10 @@ try {
         <div class="panel">
           <h3 class="panel-title">Debt by institution</h3>
           <div id="debt-inst-bars"></div>
+        </div>
+        <div class="panel leverage-card">
+          <h3 class="panel-title">Leverage</h3>
+          <div id="debt-leverage"></div>
         </div>
       </div>
     </section>
