@@ -545,7 +545,7 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .orbit-node {
   position: absolute; left: 50%; top: 50%; width: var(--size); aspect-ratio: 1;
   margin: calc(var(--size) / -2); border-radius: 50%;
-  transform: rotate(var(--angle)) translateX(var(--dist)) rotate(calc(-1 * var(--angle)));
+  transform: rotate(var(--angle)) translateX(calc(var(--dist) * var(--orbit-scale, 1))) rotate(calc(-1 * var(--angle)));
   background: radial-gradient(circle at 35% 28%, #fff, var(--c) 34%, color-mix(in srgb, var(--c) 38%, #05070b) 100%);
   box-shadow: 0 0 24px color-mix(in srgb, var(--c) 42%, transparent);
 }
@@ -557,10 +557,10 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .biome-panel { min-height: 520px; }
 .biome-view {
   position: relative; min-height: 480px; display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 20px; align-items: end; padding: 26px 12px 8px; perspective: 1200px; isolation: isolate;
+  gap: 20px; align-items: end; padding: 26px 12px 8px; perspective: 1200px;
 }
 .biome-view::before {
-  content: ""; position: absolute; inset: auto 0 0; z-index: 0; height: 48%;
+  content: ""; position: absolute; inset: auto 0 0; height: 48%;
   background:
     radial-gradient(80% 50% at 50% 90%, rgba(120,255,214,.13), transparent 70%),
     linear-gradient(180deg, transparent, rgba(120,255,214,.05));
@@ -570,7 +570,6 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .entity-card {
   position: relative; z-index: 1; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: end;
   padding: 14px 8px; border-radius: 24px; transform-style: preserve-3d;
-  isolation: isolate;
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.014));
   border: 1px solid rgba(255,255,255,.08); transition: border-color .22s ease, background .22s ease, box-shadow .22s ease;
 }
@@ -585,7 +584,6 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   outline-offset: 4px;
 }
 .entity-card-lift {
-  position: relative; z-index: 1;
   width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: end;
   transform-style: preserve-3d;
   transition: transform .22s ease, filter .22s ease;
@@ -600,21 +598,21 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   filter: brightness(1.08) saturate(1.08);
 }
 .entity-ground {
-  position: relative; z-index: 1;
   width: 90%; height: 18px; border-radius: 50%; margin-top: 10px;
   background: radial-gradient(ellipse, color-mix(in srgb, var(--entity-color) 42%, transparent), transparent 72%);
   filter: blur(3px);
-  transform: translateZ(2px);
 }
 .entity {
   --h: 140px;
-  z-index: 3;
   position: relative; width: 90px; height: var(--h); transform-style: preserve-3d;
-  transform: translateZ(34px);
-  backface-visibility: hidden;
+  transition: transform .22s ease;
   filter: drop-shadow(0 22px 24px rgba(0,0,0,.34));
 }
-.entity > * { backface-visibility: hidden; }
+.entity-card.is-hovered .entity,
+.entity-card.is-focused .entity,
+.entity-card:focus-visible .entity {
+  transform: translateZ(34px);
+}
 .entity.plant .stem {
   position: absolute; left: 50%; bottom: 7px; width: 12px; height: calc(var(--h) * .66);
   translate: -50% 0; border-radius: 999px;
@@ -658,9 +656,7 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   box-shadow: inset -18px -24px 30px rgba(0,0,0,.42), 0 0 26px rgba(255,135,118,.22);
 }
 .entity-label {
-  position: relative; z-index: 4;
   width: 100%; margin-top: 12px; text-align: center; font-family: var(--mono);
-  transform: translateZ(18px);
 }
 .entity-label b { display: block; font-size: .86rem; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entity-label span { display: block; color: var(--faint); font-size: .62rem; text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
@@ -852,14 +848,40 @@ tr:hover td { background: rgba(120,255,214,.035); }
 }
 @media (max-width: 540px) {
   .wrap { padding: 0 16px 60px; }
+  header { align-items: stretch; padding-top: 28px; }
+  .header-actions { width: 100%; }
+  .header-actions button { flex: 1 1 132px; }
   .stats { grid-template-columns: 1fr; }
   .add-form { grid-template-columns: 1fr; }
   .add-form .span-2 { grid-column: span 1; }
+  .panel { padding: 16px; border-radius: 20px; }
+  .copy-bar { align-items: stretch; border-radius: 24px; }
+  .copy-bar .copy-label { flex: 1 0 100%; }
+  .copy-bar select { flex: 1 1 100%; min-width: 0; width: 100%; }
+  .copy-bar button { flex: 1 1 calc(50% - 8px); }
+  .save-dot { margin-left: 0; align-self: center; }
+  .donut-grid { grid-template-columns: minmax(0, 1fr); }
   .donut-body { flex-direction: column; align-items: flex-start; }
-  .copy-bar { border-radius: 24px; }
+  .donut-body svg { align-self: center; }
   .hero-copy h1 { font-size: 3.1rem; }
+  .hero-visual { min-height: 300px; }
+  .hero-orbit { --orbit-scale: .66; width: min(100%, 360px); }
+  .proj-controls-panel summary { align-items: flex-start; flex-direction: column; gap: 5px; }
+  #proj-controls-summary { text-align: left; }
+  .contrib-item { max-width: 100%; border-radius: 18px; flex-wrap: wrap; }
+  .chip { max-width: 100%; white-space: normal; text-align: left; }
+  .bar-row { grid-template-columns: minmax(0, 1fr) minmax(90px, 1.4fr); gap: 6px 10px; }
+  .bar-row .b-val { grid-column: 1 / -1; text-align: left; }
+  .bsheet-row, .bsheet-net { align-items: stretch; flex-direction: column; gap: 8px; }
+  .bsheet-row .bs-lbl, .bsheet-net .bs-lbl { flex-basis: auto; }
+  .bsheet-row .bs-val { text-align: left; min-width: 0; }
+  .bsheet-net .bs-note { margin-left: 0; }
   .biome-view { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px; padding-inline: 0; }
   .entity-card { min-height: 220px; }
+  .form-actions { align-items: stretch; flex-direction: column; }
+  .form-hint { margin-left: 0; max-width: none; text-align: left; }
+  #toast { left: 16px; right: 16px; transform: translateY(10px); text-align: center; }
+  #toast.show { transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

@@ -57,6 +57,15 @@ const Portfolios = (() => {
     return id;
   }
 
+  function uniqueName(base) {
+    const clean = (base || "Untitled").trim() || "Untitled";
+    const existing = new Set(Object.values(state.copies).map(c => c.name));
+    if (!existing.has(clean)) return clean;
+    let n = 2;
+    while (existing.has(`${clean} ${n}`)) n++;
+    return `${clean} ${n}`;
+  }
+
   // First-run seed: import an adjacent tickers.json if the browser will serve it
   // (works over http://, blocked under file:// — then we just start empty).
   async function seedInvestments() {
@@ -111,7 +120,15 @@ const Portfolios = (() => {
   function duplicate(id) {
     const src = state.copies[id || state.activeId];
     if (!src) return;
-    state.activeId = makeCopy(src.name + " copy", src.investments.map(x => ({ ...x })));
+    state.activeId = makeCopy(uniqueName(src.name + " copy"), src.investments.map(x => ({ ...x })));
+    write();
+    loadActiveIntoData();
+    return state.activeId;
+  }
+
+  function importCopy(name, investments) {
+    if (!Array.isArray(investments)) throw new Error("JSON root must be an array of investments.");
+    state.activeId = makeCopy(uniqueName(name || "Imported from clipboard"), investments.map(x => ({ ...x })));
     write();
     loadActiveIntoData();
     return state.activeId;
@@ -135,5 +152,5 @@ const Portfolios = (() => {
     loadActiveIntoData();
   }
 
-  return { init, list, activeId, activeName, switchTo, create, duplicate, rename, remove };
+  return { init, list, activeId, activeName, switchTo, create, duplicate, importCopy, rename, remove };
 })();

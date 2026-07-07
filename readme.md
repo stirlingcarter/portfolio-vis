@@ -11,12 +11,13 @@ Open `index.html` directly in a browser. The app runs entirely from relative
 files, so this has the same runtime behavior as serving the folder, with one
 browser restriction: the first-run automatic fetch of adjacent `tickers.json` is
 blocked under `file://` in many browsers. In that case the app starts empty; use
-**Load sample portfolio** or **Import** to load data.
+**Load sample portfolio** or **Import** from clipboard where the browser permits
+clipboard reads.
 
 Saved portfolios are stored in browser `localStorage`, which is scoped to the
 current origin. A portfolio saved while opening `file://.../index.html` will not
-automatically appear at the GitHub Pages URL; use **Export** and **Import** to
-move data between them.
+automatically appear at the GitHub Pages URL; use **Export** and **Import** from
+clipboard to move data between them.
 
 ### GitHub Pages
 
@@ -44,7 +45,7 @@ data.js       — DATA LAYER: schema, store, derivations, projection math (zero 
 prices.js     — PRICE LAYER: live quote lookups (Yahoo + CoinGecko), zero DOM/state
 portfolios.js — PERSISTENCE LAYER: named copies in localStorage, syncs with Data
 ui.js         — PRESENTATION LAYER: rendering, hand-rolled SVG charts, wiring
-tickers.json  — first-run seed / import-export file (no longer the live store)
+tickers.json  — first-run seed / legacy JSON sample (no longer the live store)
 .nojekyll     — GitHub Pages marker: serve files directly, without Jekyll
 readme.md     — this file
 ```
@@ -77,7 +78,9 @@ Load order matters: `index.html` loads `data.js`, then `prices.js`, then
   "Category": "Stock",
   "Subcategory": "Growth Stocks",
   "Nominal Rate": 0.08,
-  "Nominal tax rate": 0.1
+  "Nominal tax rate": 0.1,
+  "Amort Months": "",
+  "Amort Payment": ""
 }
 ```
 
@@ -146,11 +149,15 @@ automatically on return. It holds many named **copies** (portfolios), one active
   fetching an adjacent `tickers.json` (works over HTTP; under `file://` the fetch
   is blocked and it starts empty). After that, localStorage is the source of
   truth and `tickers.json` is just an import/export convenience.
-- **Import / export stays manual too:** **Copy JSON** serializes the active copy
-  to the clipboard; **Load tickers.json** (file picker) replaces the active
-  copy's positions. IDs are normalized to be unique on every load
-  (`normalizeIds` in `data.js`) — hand-edited/merged JSON with duplicate or
-  missing IDs is repaired so ledger row identity (edit/remove) stays sound.
+- **Import / export stays manual too:** **Export** serializes the active copy's
+  positions to the clipboard as the ordered JSON array above; **Import** reads
+  that clipboard JSON and creates a new active portfolio copy named "Imported
+  from clipboard" (with a numeric suffix if needed). The payload is positions
+  only; projection controls and exact contribution chip state stay in
+  `coldledger.ui.v1` and reset for imported copies. IDs are normalized to be
+  unique on every load (`normalizeIds` in `data.js`) — hand-edited/merged JSON
+  with duplicate or missing IDs is repaired so ledger row identity
+  (edit/remove) stays sound.
 
 ## Projection math (`Data.projection`)
 

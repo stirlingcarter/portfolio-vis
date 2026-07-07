@@ -19,16 +19,14 @@
     <div>
       <div class="eyebrow">Private portfolio lab</div>
       <div class="wordmark">ColdData <em>Ledger</em></div>
-      <div class="tagline">Local-first portfolio ledger · no server, no account</div>
+      <div class="tagline">Local-first portfolio ledger</div>
     </div>
     <div class="header-actions">
-      <button class="load-json">Import</button>
+      <button class="load-json" title="Import exported JSON from the clipboard">Import</button>
       <button id="refresh-prices">Refresh prices</button>
       <button id="copy-json" class="primary">Export</button>
     </div>
   </header>
-
-  <input type="file" id="file-input" accept=".json,application/json" hidden>
 
   <!-- ============ PORTFOLIO COPIES ============ -->
   <div class="copy-bar">
@@ -52,10 +50,10 @@
       <span></span><span></span><span></span>
     </div>
     <div class="big">No positions yet.</div>
-    <p>Add positions below, or import a saved backup. Every chart on this
+    <p>Add positions below, or import a copied backup. Every chart on this
        page is built from the tags you assign: institution, account type, vehicle, vehicle category, ticker.</p>
     <div class="btn-row">
-      <button class="load-json">Import backup</button>
+      <button class="load-json" title="Import exported JSON from the clipboard">Import from clipboard</button>
       <button id="seed-btn">Load sample portfolio</button>
     </div>
   </div>

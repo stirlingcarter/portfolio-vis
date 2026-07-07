@@ -119,9 +119,15 @@ const Data = (() => {
     notify();
   }
 
-  function loadText(text) {
+  function parseText(text) {
     const trimmed = text.trim();
-    loadArray(trimmed === "" ? [] : JSON.parse(trimmed));
+    const parsed = trimmed === "" ? [] : JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) throw new Error("JSON root must be an array of investments.");
+    return parsed;
+  }
+
+  function loadText(text) {
+    loadArray(parseText(text));
   }
 
   // Export with exact field order. Amount = shares. Value = dollar valuation
@@ -294,7 +300,7 @@ const Data = (() => {
 
   return {
     FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS,
-    subscribe, add, remove, update, all, loadArray, loadText, toJSON,
+    subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
     presentValue, netValue, taxRate, pricePerShare, isAmortized, isAsset, isDebt,
     total, assetTotal, debtTotal, weightedRate, groupBy, crossTab, projection
   };

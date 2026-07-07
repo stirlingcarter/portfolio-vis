@@ -1416,34 +1416,78 @@
 
   /* ---------- load / save ---------- */
 
+  async function writeClipboardText(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Fall back below for browsers that allow execCommand from a click even
+        // when the async Clipboard API is blocked.
+      }
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "-9999px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand && document.execCommand("copy");
+    ta.remove();
+    if (!ok) throw new Error("clipboard write is unavailable in this browser");
+  }
+
+  async function readClipboardText() {
+    if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") {
+      throw new Error("clipboard read requires HTTPS/GitHub Pages or browser permission");
+    }
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      throw new Error("clipboard read was blocked; allow clipboard access and try again");
+    }
+  }
+
+  function parseClipboardBackup(text) {
+    if (!text.trim()) throw new Error("clipboard is empty; export a backup first");
+    return Data.parseText(text);
+  }
+
   function wireIO() {
     $("#copy-json").addEventListener("click", async () => {
       const backup = Data.toJSON();
       try {
-        await navigator.clipboard.writeText(backup);
+        await writeClipboardText(backup);
         toast("Backup copied to clipboard");
-      } catch {
-        const ta = document.createElement("textarea");
-        ta.value = backup; document.body.appendChild(ta); ta.select();
-        document.execCommand("copy"); ta.remove();
-        toast("Backup copied to clipboard");
+      } catch (err) {
+        toast("Couldn't copy backup: " + err.message);
       }
     });
 
-    const fileInput = $("#file-input");
-    document.querySelectorAll(".load-json").forEach(b => b.addEventListener("click", () => fileInput.click()));
-    fileInput.addEventListener("change", async () => {
-      const file = fileInput.files[0];
-      if (!file) return;
+    document.querySelectorAll(".load-json").forEach(b => b.addEventListener("click", async e => {
+      const btn = e.currentTarget;
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Reading…";
       try {
-        Data.loadText(await file.text());
+        const investments = parseClipboardBackup(await readClipboardText());
+        Portfolios.importCopy("Imported from clipboard", investments);
         resetContributionState();
         saveUiState();
         renderAll();
-        toast(`Imported ${Data.all().length} positions`);
-      } catch (err) { toast("Couldn't read that backup: " + err.message); }
-      fileInput.value = "";
-    });
+        toast(`Imported ${Data.all().length} positions into "${Portfolios.activeName()}"`);
+      } catch (err) {
+        toast("Clipboard import failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }));
 
     // Re-price every auto-priced holding: fixed-price tickers like USD plus
     // positions that look like securities (see looksTradable). Call-signs like
