@@ -78,6 +78,7 @@
     projectionView: "simple",
     simpleRate: 0.08,
     simpleMonthly: 0,
+    simpleMonthlyEnabled: false,
     heroMetric: "net",
     biomeMode: "cards",
     privacyMode: false,
@@ -97,7 +98,7 @@
     years: { min: 1, max: 50, step: 1, fallback: 25 },
     monthly: { min: 0, max: 10000, step: 100, fallback: 1000 },
     simpleRate: { min: -0.1, max: 0.5, step: 0.005, fallback: 0.08 },
-    simpleMonthly: { min: 0, max: 1000000, step: 100, fallback: 0 }
+    simpleMonthly: { min: 0, max: 1000000, step: "any", fallback: 0 }
   };
   const HERO_METRICS = [
     { key: "net", label: "net worth", value: () => Data.total(ui.taxOn) },
@@ -170,6 +171,16 @@
       n = clamp(n, spec.min, spec.max);
     }
     return Number(n.toFixed(6));
+  }
+
+  function effectiveSimpleMonthly() {
+    ui.simpleMonthly = rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly);
+    return ui.simpleMonthlyEnabled ? ui.simpleMonthly : 0;
+  }
+
+  function simpleMonthlyOutputText() {
+    const configured = fmt$full(ui.simpleMonthly) + "/mo";
+    return ui.simpleMonthlyEnabled ? configured : `${configured} saved · off`;
   }
 
   function readUiStorage() {
@@ -327,6 +338,9 @@
       if ("projectionView" in projection) ui.projectionView = coerceProjectionView(projection.projectionView);
       if ("simpleRate" in projection) ui.simpleRate = rangeValue(projection.simpleRate, RANGE_LIMITS.simpleRate);
       if ("simpleMonthly" in projection) ui.simpleMonthly = rangeValue(projection.simpleMonthly, RANGE_LIMITS.simpleMonthly);
+      ui.simpleMonthlyEnabled = "simpleMonthlyEnabled" in projection
+        ? projection.simpleMonthlyEnabled === true
+        : ui.simpleMonthly > 0;
     }
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
@@ -354,7 +368,8 @@
         taxOn: ui.taxOn === true,
         projectionView: coerceProjectionView(ui.projectionView),
         simpleRate: rangeValue(ui.simpleRate, RANGE_LIMITS.simpleRate),
-        simpleMonthly: rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly)
+        simpleMonthly: rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly),
+        simpleMonthlyEnabled: ui.simpleMonthlyEnabled === true
       },
       heroMetric: heroMetricFor(ui.heroMetric).key,
       biomeMode: coerceBiomeMode(ui.biomeMode),
@@ -374,7 +389,8 @@
   }
 
   function syncProjectionControlsToDom() {
-    const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider"), simpleMonthly = $("#simple-monthly-input");
+    const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
+    const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
     if (years) {
       years.min = String(RANGE_LIMITS.years.min);
       years.max = String(RANGE_LIMITS.years.max);
@@ -404,6 +420,7 @@
     }
     if (simpleMonthly) {
       simpleMonthly.min = String(RANGE_LIMITS.simpleMonthly.min);
+      simpleMonthly.max = String(RANGE_LIMITS.simpleMonthly.max);
       simpleMonthly.step = String(RANGE_LIMITS.simpleMonthly.step);
       ui.simpleMonthly = rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly);
       simpleMonthly.value = moneyHidden() ? "" : String(ui.simpleMonthly);
@@ -411,9 +428,16 @@
       simpleMonthly.disabled = moneyHidden();
       simpleMonthly.title = moneyHidden()
         ? "Turn off privacy mode to edit this simple monthly contribution"
-        : "Monthly amount added to aggregate assets in Simple projection";
+        : "Saved monthly amount for the Simple projection; use the toggle to apply it";
       const out = $("#simple-monthly-out");
-      if (out) out.textContent = fmt$full(ui.simpleMonthly) + "/mo";
+      if (out) out.textContent = simpleMonthlyOutputText();
+    }
+    if (simpleMonthlyEnabled) {
+      simpleMonthlyEnabled.checked = ui.simpleMonthlyEnabled;
+      const label = $("#simple-monthly-enabled-label");
+      if (label) label.textContent = ui.simpleMonthlyEnabled ? "On" : "Off";
+      const block = simpleMonthlyEnabled.closest(".simple-monthly-block");
+      if (block) block.classList.toggle("is-disabled", !ui.simpleMonthlyEnabled);
     }
     document.querySelectorAll(".tax-toggle").forEach(t => { t.checked = ui.taxOn; });
     syncPrivacyControlToDom();
@@ -1112,7 +1136,7 @@
     const core = el("button", "hero-core", `<b>${fmt$(heroMetricValue)}</b><span>${heroMetric.label}${taxContext}</span>`);
     core.type = "button";
     core.title = `Show ${nextHeroMetric.label}`;
-    core.style.setProperty("--hero-core-color", heroColorForMetric(heroMetric.key));
+    core.style.setProperty("--hero-amount-color", heroColorForMetric(heroMetric.key));
     core.setAttribute("aria-label", `Showing ${heroMetric.label}: ${fmt$full(heroMetricValue)}${ui.taxOn ? " post-tax" : ""}. Activate to show ${nextHeroMetric.label}.`);
     core.addEventListener("click", () => {
       ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
@@ -2280,9 +2304,12 @@
 
   /* ---------- stats + projection readout ---------- */
 
-  function renderStats(proj) {
+  function renderStats(proj, aggregateProj) {
     const invs = Data.all();
     const assets = Data.assetTotal(ui.taxOn), debts = Data.debtTotal(ui.taxOn);
+    const projected = ui.projectionView === "simple" && aggregateProj
+      ? aggregateProj.assets[aggregateProj.assets.length - 1] - aggregateProj.debts[aggregateProj.debts.length - 1]
+      : proj.totals[proj.totals.length - 1];
     $("#stat-total").textContent = fmt$full(Data.total(ui.taxOn));
     $("#stat-total-sub").textContent = debts > 0
       ? `${fmt$(assets)} assets − ${fmt$(debts)} debts`
@@ -2292,7 +2319,7 @@
       new Set(invs.map(i => i.Institution || "—")).size + " institutions · " +
       new Set(invs.map(i => i["Account Type"] || "—")).size + " account types";
     $("#stat-rate").textContent = fmtPct(Data.weightedRate());
-    $("#stat-proj").textContent = fmt$(proj.totals[proj.totals.length - 1]);
+    $("#stat-proj").textContent = fmt$(projected);
     $("#stat-proj-k").textContent = `Projected · ${ui.years}Y`;
 
     const end = proj.totals[proj.totals.length - 1];
@@ -2320,13 +2347,19 @@
     const endAssets = proj.assets[N];
     const endDebts = proj.debts[N];
     const endNet = endAssets - endDebts;
+    const contributed = proj.contribution.monthly * 12 * ui.years;
+    const contributionSummary = ui.simpleMonthlyEnabled
+      ? `<span class="hl"><b>${fmt$full(proj.contribution.monthly)}</b>/mo simple contribution</span>`
+      : `<span class="hl">simple contribution off · <b>${fmt$full(ui.simpleMonthly)}</b>/mo saved</span>`;
     $("#proj-readout").innerHTML = `
       <span class="hl"><b>${fmtPct(proj.rate)}</b>/yr aggregate rate</span>
+      ${contributionSummary}
       <span>assets <b>${fmt$full(startAssets)}</b> → <b>${fmt$full(endAssets)}</b></span>
       <span>debt <b>${fmt$full(startDebts)}</b> → <b>${fmt$full(endDebts)}</b></span>
       <span>end net <b>${fmt$full(endNet)}</b></span>
+      <span>contributed <b>${fmt$full(contributed)}</b></span>
       <span>${ui.taxOn ? "post-tax · " : ""}debt shown as positive balance</span>
-      <span>${proj.debt.amortized ? `${proj.debt.amortized} amortizing debt${proj.debt.amortized === 1 ? "" : "s"} follow schedules` : "no scheduled debt paydown"}${proj.debt.carried ? ` · ${proj.debt.carried} carried at aggregate rate` : ""}</span>`;
+      <span>${proj.debt.amortized ? `${proj.debt.amortized} amortizing debt${proj.debt.amortized === 1 ? "" : "s"} follow schedules outside the contribution budget` : "no scheduled debt paydown"}${proj.debt.carried ? ` · ${proj.debt.carried} carried at aggregate rate` : ""}</span>`;
   }
 
   /* ---------- balance sheet + debts ---------- */
@@ -2397,21 +2430,42 @@
     const aggregateProj = Data.aggregateProjection({
       years: ui.years,
       rate: ui.simpleRate,
+      monthlyContribution: effectiveSimpleMonthly(),
       taxOn: ui.taxOn
     });
     syncProjectionModeToDom();
     syncBiomeModeToDom();
     $("#monthly-out").textContent = fmt$full(ui.monthly) + "/mo";
     $("#simple-rate-out").textContent = fmtPct(ui.simpleRate) + "/yr";
+    const simpleMonthlyInput = $("#simple-monthly-input");
+    if (simpleMonthlyInput) {
+      ui.simpleMonthly = rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly);
+      simpleMonthlyInput.value = moneyHidden() ? "" : String(ui.simpleMonthly);
+      simpleMonthlyInput.placeholder = moneyHidden() ? MONEY_MASK : "$/mo";
+      simpleMonthlyInput.disabled = moneyHidden();
+      simpleMonthlyInput.title = moneyHidden()
+        ? "Turn off privacy mode to edit this simple monthly contribution"
+        : "Saved monthly amount for the Simple projection; use the toggle to apply it";
+    }
+    const simpleMonthlyOut = $("#simple-monthly-out");
+    if (simpleMonthlyOut) simpleMonthlyOut.textContent = simpleMonthlyOutputText();
+    const simpleMonthlyEnabled = $("#simple-monthly-enabled");
+    if (simpleMonthlyEnabled) {
+      simpleMonthlyEnabled.checked = ui.simpleMonthlyEnabled;
+      const label = $("#simple-monthly-enabled-label");
+      if (label) label.textContent = ui.simpleMonthlyEnabled ? "On" : "Off";
+      const block = simpleMonthlyEnabled.closest(".simple-monthly-block");
+      if (block) block.classList.toggle("is-disabled", !ui.simpleMonthlyEnabled);
+    }
     const controlsSummary = $("#proj-controls-summary");
     if (controlsSummary) {
       controlsSummary.textContent = ui.projectionView === "simple"
-        ? `${ui.years}Y · ${fmtPct(ui.simpleRate)}/yr · scheduled debt${ui.taxOn ? " · post-tax" : ""}`
+        ? `${ui.years}Y · ${fmtPct(ui.simpleRate)}/yr · ${ui.simpleMonthlyEnabled ? fmt$(ui.simpleMonthly) + "/mo simple" : fmt$(0) + "/mo simple off" + (ui.simpleMonthly > 0 ? ` (${fmt$(ui.simpleMonthly)} saved)` : "")}${ui.taxOn ? " · post-tax" : ""}`
         : `${ui.years}Y · ${ui.contribTouched ? fmt$(proj.contrib.total) + "/mo exact" : fmt$(ui.monthly) + "/mo"} · ${proj.contrib.count} target${proj.contrib.count === 1 ? "" : "s"}${ui.taxOn ? " · post-tax" : ""}`;
     }
     renderContribChips(proj.contrib);
     renderAmortizedDebtCosts();
-    renderStats(proj);
+    renderStats(proj, aggregateProj);
     renderHeroExperience(proj);
     renderBiome();
     if (ui.projectionView === "simple") {
@@ -2522,6 +2576,7 @@
 
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
+    const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
     const privacyToggle = $("#privacy-toggle");
     syncProjectionControlsToDom();
     if (privacyToggle) {
@@ -2573,6 +2628,22 @@
       ui.simpleRate = rangeValue(Number(simpleRate.value) / 100, RANGE_LIMITS.simpleRate);
       simpleRate.value = String(+(ui.simpleRate * 100).toFixed(3));
       $("#simple-rate-out").textContent = fmtPct(ui.simpleRate) + "/yr";
+      saveUiState();
+      renderAll();
+    });
+    simpleMonthly.addEventListener("input", () => {
+      const wasZero = ui.simpleMonthly <= 0;
+      ui.simpleMonthly = rangeValue(simpleMonthly.value, RANGE_LIMITS.simpleMonthly);
+      if (ui.simpleMonthly <= 0) ui.simpleMonthlyEnabled = false;
+      else if (wasZero) ui.simpleMonthlyEnabled = true;
+      simpleMonthly.value = String(ui.simpleMonthly);
+      $("#simple-monthly-out").textContent = simpleMonthlyOutputText();
+      if (simpleMonthlyEnabled) simpleMonthlyEnabled.checked = ui.simpleMonthlyEnabled;
+      saveUiState();
+      renderAll();
+    });
+    simpleMonthlyEnabled.addEventListener("change", () => {
+      ui.simpleMonthlyEnabled = simpleMonthlyEnabled.checked;
       saveUiState();
       renderAll();
     });

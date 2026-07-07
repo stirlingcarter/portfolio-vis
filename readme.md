@@ -195,16 +195,20 @@ labelled accordingly. Layers receiving contributions are drawn bolder;
 amortizing debts are dashed; a dotted net-worth line runs on top. The projection
 controls sit below the chart in a foldable panel.
 
-The Projection section also has a **Simple** view. `Data.aggregateProjection`
+The Projection section defaults to a **Simple** view. `Data.aggregateProjection`
 rolls all current assets into one positive magnitude and projects debt as a
 separate positive balance. Assets and non-amortized debts use the configurable
-yearly aggregate/carry rate; amortized debts are projected one by one using
-their own loan schedules, then summed into the red debt line. It intentionally
-shares the existing horizon and post-tax controls but ignores detailed
-contribution targets and per-position asset rates. The selected projection view
-and simple yearly rate live with the other projection UI controls in
-`coldledger.ui.v1`, with the simple rate clamped to the slider range
-(`-10%` to `50%`); portfolio data export/import remains positions-only.
+yearly aggregate/carry rate; when enabled, the Simple monthly contribution is
+added only to the aggregate asset line. Turning that contribution off applies
+`$0/mo` while preserving the saved amount in the control for later re-enable.
+Amortized debts are projected one by one using their own loan schedules, then
+summed into the red debt line, outside the contribution budget. Simple
+intentionally shares the existing horizon and post-tax controls but ignores
+detailed contribution targets and per-position asset rates. The selected
+projection view, simple yearly rate, simple monthly contribution amount, and
+its enabled state live with the other projection UI controls in
+`coldledger.ui.v1`, with the simple rate clamped to the slider range (`-10%` to
+`50%`); portfolio data export/import remains positions-only.
 
 ## Live pricing (`prices.js`)
 

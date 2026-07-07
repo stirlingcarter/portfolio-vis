@@ -4,6 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const dataSource = fs.readFileSync(path.join(__dirname, "data.js"), "utf8");
+const uiSource = fs.readFileSync(path.join(__dirname, "ui.js"), "utf8");
 const sandbox = {};
 vm.runInNewContext(`${dataSource}\nglobalThis.Data = Data;`, sandbox, { filename: "data.js" });
 const { Data } = sandbox;
@@ -81,5 +82,32 @@ approx(simple.debts[6], 9000, "simple debt sums per-debt amortization schedules"
 approx(simple.debts[12], 3000, "simple amortized debts are zero by their terms");
 assert.equal(simple.debt.amortized, 2, "simple projection reports amortized debt count");
 assert.equal(simple.debt.carried, 1, "simple projection reports carried debt count");
+assert.equal(simple.contribution.monthly, 0, "simple contribution defaults to zero");
 
-console.log("ok - projection amortization smoke");
+const simpleWithContribution = Data.aggregateProjection({
+  years: 1,
+  rate: 0,
+  monthlyContribution: 100,
+  taxOn: false
+});
+approx(simpleWithContribution.assets[12], 2200, "simple contribution adds to aggregate assets monthly");
+approx(simpleWithContribution.debts[12], 3000, "simple contribution does not pay down aggregate debts");
+assert.equal(simpleWithContribution.contribution.monthly, 100, "simple monthly contribution metadata is reported");
+assert.equal(simpleWithContribution.contribution.total, 1200, "simple total contribution metadata is reported");
+
+const simpleContributionDisabled = Data.aggregateProjection({
+  years: 1,
+  rate: 0,
+  monthlyContribution: 0,
+  taxOn: false
+});
+approx(simpleContributionDisabled.assets[12], simple.assets[12], "disabled simple contribution keeps assets at no-contribution path");
+assert.equal(simpleContributionDisabled.contribution.monthly, 0, "disabled simple contribution reports zero applied monthly");
+
+assert.match(uiSource, /projectionView:\s*"simple"/, "simple projection is the no-history default view");
+assert.match(uiSource, /simpleMonthlyEnabled:\s*false/, "simple contribution starts disabled without saved amount");
+assert.match(uiSource, /: ui\.simpleMonthly > 0;/, "legacy nonzero simple monthly amount migrates to enabled");
+assert.match(uiSource, /monthlyContribution:\s*effectiveSimpleMonthly\(\)/, "simple projection uses enabled-state effective monthly contribution");
+assert.match(uiSource, /function coerceProjectionView\(value\)[\s\S]*return value === "detailed" \|\| value === "simple" \? value : "simple";/, "invalid persisted projection view falls back to simple");
+
+console.log("ok - projection amortization and simple contribution smoke");

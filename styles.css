@@ -273,8 +273,8 @@ header {
 body.settings-open #dashboard,
 body.settings-open #hero-empty { display: none !important; }
 .settings-grid {
-  display: grid; grid-template-columns: minmax(280px, 1.35fr) repeat(2, minmax(220px, 1fr));
-  gap: 16px; margin-top: 18px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px; margin-top: 18px; align-items: start;
 }
 .settings-block {
   padding: 16px;
@@ -291,36 +291,31 @@ body.settings-open #hero-empty { display: none !important; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .settings-actions {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+  display: flex; flex-direction: column; gap: 10px;
   margin-top: 12px;
 }
-.settings-actions button { width: 100%; }
+/* Match the add-form's buttons above: full-width, base pill size (.78rem / 9px 14px). */
+.settings-actions button { width: 100%; padding: 9px 14px; font-size: .78rem; }
 .live-price-status {
   margin-top: 10px;
   font-family: var(--mono); font-size: .66rem; letter-spacing: .1em;
   text-transform: uppercase; color: var(--faint);
 }
 
-/* theme picker — four swatch pills; the active one glows with the hot line */
+/* theme picker — four swatch buttons stacked vertically; active one glows with the hot line */
 .theme-toggle {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  margin-top: 12px; padding: 5px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background: var(--track);
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 12px;
 }
+/* Match the add-form's buttons above: full-width base pill buttons, one per row. */
 .theme-toggle button {
-  flex: 1 1 auto;
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 7px 12px; font-size: .66rem; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--muted); background: transparent; border-color: transparent;
-}
-.theme-toggle button:hover {
-  color: var(--ink); border-color: var(--line);
-  box-shadow: none; filter: none;
+  width: 100%;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 9px 14px; font-size: .78rem; letter-spacing: .04em; text-transform: none;
+  color: var(--ink);
 }
 .theme-toggle button[aria-pressed="true"] {
-  color: var(--ink); font-weight: 700;
-  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+  font-weight: 700;
   border-color: var(--line-hot);
   box-shadow: 0 0 18px color-mix(in srgb, var(--coin) 16%, transparent);
 }
@@ -336,14 +331,16 @@ body.settings-open #hero-empty { display: none !important; }
 .theme-toggle button[data-theme-choice="pink"] .theme-swatch { background: linear-gradient(135deg, #f7dbe3 55%, #c46a86); }
 .copy-bar.settings-copy-bar {
   margin-top: 12px; padding: 0;
-  align-items: stretch;
+  flex-direction: column; align-items: stretch; gap: 10px;
   background: transparent; border: 0; border-radius: 0;
   box-shadow: none; backdrop-filter: none;
 }
-.settings-copy-bar .copy-label { flex: 1 0 100%; }
-.settings-copy-bar select { flex: 1 1 100%; min-width: 0; width: 100%; }
-.settings-copy-bar button { flex: 1 1 calc(50% - 8px); }
-.settings-copy-bar .save-dot { margin-left: 0; align-self: center; }
+.settings-copy-bar .copy-label { width: 100%; }
+.copy-bar.settings-copy-bar select { min-width: 0; width: 100%; }
+/* Match the add-form's buttons above: full-width, base pill size (.78rem / 9px 14px).
+   Two-class selector keeps this ahead of the generic .copy-bar button overrides. */
+.copy-bar.settings-copy-bar button { flex: 0 0 auto; width: 100%; padding: 9px 14px; font-size: .78rem; }
+.settings-copy-bar .save-dot { margin-left: 0; align-self: flex-start; }
 .settings-ledger-section { margin-top: 0; }
 .settings-view section { margin-top: 0; }
 .settings-ledger-panel { padding: 18px; }
@@ -557,6 +554,7 @@ label.field span {
   display: grid; grid-template-columns: 1fr 1fr auto; gap: 22px;
   align-items: end; margin: 16px 0 18px;
 }
+#projection.is-simple .controls { grid-template-columns: 1fr 1fr 1fr auto; }
 #projection:not(.is-simple) .simple-only { display: none; }
 #projection.is-simple .detailed-only { display: none; }
 .slider-block .slider-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
@@ -564,6 +562,23 @@ label.field span {
   font-family: var(--mono); font-size: .66rem; letter-spacing: .13em; text-transform: uppercase; color: var(--muted);
 }
 .slider-block .slider-head output { font-family: var(--mono); font-size: .95rem; color: var(--brass); }
+.simple-monthly-control {
+  display: flex; align-items: center; gap: 12px;
+}
+.simple-monthly-control input[type="number"] {
+  flex: 1 1 auto; min-width: 0;
+}
+.simple-monthly-toggle {
+  flex: 0 0 auto;
+}
+.simple-monthly-block.is-disabled .slider-head output,
+.simple-monthly-block.is-disabled .simple-monthly-toggle .t-label {
+  color: var(--faint);
+}
+.simple-monthly-block.is-disabled .simple-monthly-control input[type="number"] {
+  opacity: .58;
+  border-style: dashed;
+}
 
 input[type="range"] {
   -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
@@ -1090,7 +1105,11 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   outline: 2px solid var(--hero-core-color); outline-offset: 8px;
   box-shadow: 0 0 110px color-mix(in srgb, var(--hero-core-color) 38%, transparent), 0 0 0 1px color-mix(in srgb, var(--hero-core-color) 30%, transparent), inset -16px -22px 46px rgba(0,0,0,.48);
 }
-.hero-core b { display: block; font-family: var(--mono); font-size: clamp(1.4rem, 2.6vw, 2.1rem); letter-spacing: -.08em; transform: translateY(-2px); }
+.hero-core b {
+  display: block; font-family: var(--mono); font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+  color: var(--hero-amount-color, var(--net, var(--net-worth, #a78bfa)));
+  letter-spacing: -.08em; transform: translateY(-2px);
+}
 .hero-core span { display: block; margin-top: 2px; font-family: var(--mono); font-size: .62rem; color: #02120f; letter-spacing: .16em; text-transform: uppercase; transform: translateY(-5px); }
 .orbit-node {
   position: absolute; left: 50%; top: 50%; width: var(--size); aspect-ratio: 1;
@@ -1562,6 +1581,7 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
   .controls { grid-template-columns: 1fr; }
+  #projection.is-simple .controls { grid-template-columns: 1fr; }
   .proj-readout-row { flex-direction: column; }
   .amort-costs { flex-basis: auto; }
   .projection-head-controls, .biome-head-controls { width: 100%; justify-content: space-between; }
