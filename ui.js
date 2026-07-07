@@ -108,6 +108,7 @@
   // Coherent app themes — palettes live in styles.css under html[data-theme=…].
   // "dark" is the original petrol/brass identity and needs no attribute overrides.
   const THEMES = ["dark", "white", "sand", "pink"];
+  const LIGHT_TOGGLE_THEME = "white";
   const coerceTheme = value => THEMES.includes(value) ? value : "dark";
 
   const BIOME_MODES = ["cards", "float", "pens"];
@@ -180,7 +181,7 @@
 
   function simpleMonthlyOutputText() {
     const configured = fmt$full(ui.simpleMonthly) + "/mo";
-    return ui.simpleMonthlyEnabled ? configured : `${configured} saved · off`;
+    return ui.simpleMonthlyEnabled ? configured : `${configured} saved`;
   }
 
   function readUiStorage() {
@@ -226,8 +227,11 @@
   }
 
   function updateLivePriceStatus(prefix = "") {
-    const node = $("#live-price-status");
-    if (node) node.textContent = priceRefreshStatusText(prefix);
+    const text = priceRefreshStatusText(prefix);
+    document.querySelectorAll("[data-live-price-status]").forEach(node => {
+      node.textContent = text;
+      node.title = text;
+    });
   }
 
   function shouldSkipPageLoadPriceRefresh(now = Date.now()) {
@@ -448,9 +452,17 @@
 
   function syncThemeToDom() {
     ui.theme = coerceTheme(ui.theme);
-    document.documentElement.dataset.theme = ui.theme;
-    document.querySelectorAll(".theme-toggle button").forEach(btn =>
-      btn.setAttribute("aria-pressed", String(btn.dataset.themeChoice === ui.theme)));
+    if (ui.theme === "dark") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.dataset.theme = ui.theme;
+
+    const btn = $("#theme-mode-toggle");
+    if (!btn) return;
+    const isDark = ui.theme === "dark";
+    btn.setAttribute("aria-pressed", String(isDark));
+    btn.title = isDark ? "Switch to light theme" : "Switch to dark theme";
+    btn.setAttribute("aria-label", isDark
+      ? "Dark mode on. Switch to light theme."
+      : "Dark mode off. Switch to dark theme.");
   }
 
   function syncProjectionModeToDom() {
@@ -509,38 +521,25 @@
     return n;
   };
 
-  function renderHeroDateTime(now = new Date()) {
+  // The hero title is just the number: net worth (white), assets (green) or
+  // debt (red), always to the cent. Clicking it cycles between the three.
+  function renderHeroAmount() {
     const title = $("#hero-title");
     if (!title) return;
+    const metric = heroMetricFor(ui.heroMetric);
+    const next = heroMetricFor(nextHeroMetricKey(metric.key));
+    const amount = fmt$cents(metric.value());
     title.innerHTML = "";
-    const time = el("time", "hero-datetime");
-    const timeText = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    const dateText = now.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "short",
-      day: "numeric",
-      year: "numeric"
+    const btn = el("button", `hero-amount is-${metric.key}`, amount);
+    btn.type = "button";
+    btn.title = `${metric.label}${ui.taxOn ? " · post-tax" : ""} — click to show ${next.label}`;
+    btn.setAttribute("aria-label", `${metric.label}: ${amount}${ui.taxOn ? " post-tax" : ""}. Activate to show ${next.label}.`);
+    btn.addEventListener("click", () => {
+      ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
+      saveUiState();
+      renderAll();
     });
-    time.dateTime = now.toISOString();
-    time.setAttribute("aria-label", `${timeText}, ${dateText}`);
-    time.appendChild(el("span", "hero-time", timeText));
-    time.appendChild(el("span", "hero-date", dateText));
-    title.appendChild(time);
-  }
-
-  let heroClockTimeout = null;
-  function startHeroClock() {
-    if (heroClockTimeout !== null) return;
-    renderHeroDateTime();
-    const tick = () => {
-      renderHeroDateTime();
-      const now = new Date();
-      const delay = ((60 - now.getSeconds()) * 1000) - now.getMilliseconds();
-      heroClockTimeout = setTimeout(tick, Math.max(1000, delay));
-    };
-    const now = new Date();
-    const delay = ((60 - now.getSeconds()) * 1000) - now.getMilliseconds();
-    heroClockTimeout = setTimeout(tick, Math.max(1000, delay));
+    title.appendChild(btn);
   }
 
   /* ---------- tooltip & toast ---------- */
@@ -988,6 +987,34 @@
   const floatSizeFor = (value, max) => clamp(56 + Math.sqrt(value / max) * 88, 56, 144);
   const cardEntitySizeFor = (value, max) => clamp(66 + Math.sqrt(value / max) * 96, 66, 162);
   const penEntitySizeFor = (value, max) => clamp(50 + Math.sqrt(value / max) * 62, 50, 112);
+  function institutionPenLayoutFor(inst, max) {
+    const holdings = inst.holdings && inst.holdings.length ? inst.holdings : [];
+    const count = Math.max(holdings.length || inst.count || 0, 1);
+    const sizes = holdings.map(inv => penEntitySizeFor(invMagnitude(inv), max));
+    const largest = Math.max(...sizes, 50);
+
+    if (count === 1) {
+      return {
+        kind: "single",
+        span: 1,
+        width: Math.round(clamp(largest * 1.28 + 54, 132, 198)),
+        minHeight: Math.round(clamp(largest + 108, 166, 220)),
+        cardMinHeight: Math.round(clamp(largest + 76, 126, 180)),
+        yardMin: Math.round(clamp(largest * .78 + 36, 74, 124))
+      };
+    }
+
+    const columns = clamp(Math.ceil(Math.sqrt(count * 1.35)), 2, 4);
+    const rows = Math.ceil(count / columns);
+    const span = clamp(columns + (largest > 92 ? 1 : 0), 2, 5);
+    return {
+      kind: "multi",
+      span,
+      minHeight: Math.round(clamp(86 + rows * 154, 220, 560)),
+      cardMinHeight: 148,
+      yardMin: 74
+    };
+  }
   function floatEdgesFor(size, bounds) {
     const width = bounds && bounds.width ? bounds.width : FLOAT_STAGE.w;
     const height = bounds && bounds.height ? bounds.height : FLOAT_STAGE.h;
@@ -1100,24 +1127,15 @@
     }]));
   }
 
-  function renderHeroExperience(proj) {
-    const metrics = $("#hero-metrics");
+  function renderHeroExperience() {
     const stage = $("#hero-visual");
-    if (!metrics || !stage) return;
+    if (!stage) return;
 
     const invs = Data.all();
-    const assets = Data.assetTotal(ui.taxOn);
-    const debts = Data.debtTotal(ui.taxOn);
-    const end = proj.totals[proj.totals.length - 1];
-    const gain = end - Data.total(ui.taxOn);
-    metrics.innerHTML = `
-      <span class="hero-chip"><b>${fmt$full(assets)}</b> gross assets</span>
-      <span class="hero-chip"><b>${fmt$full(debts)}</b> debts</span>
-      <span class="hero-chip"><b>${fmt$(Math.max(gain, 0))}</b> projected growth</span>
-      <span class="hero-chip"><b>${fmtPct(Data.weightedRate())}</b> blended real rate</span>`;
-
     stage.innerHTML = "";
     const orbit = el("div", "hero-orbit");
+    const heroMetric = heroMetricFor(ui.heroMetric);
+    orbit.dataset.metric = heroMetric.key;
     [
       { inset: "7%", rot: "8deg" },
       { inset: "18%", rot: "-28deg" },
@@ -1129,7 +1147,6 @@
       orbit.appendChild(ring);
     });
 
-    const heroMetric = heroMetricFor(ui.heroMetric);
     const heroMetricValue = heroMetric.value();
     const nextHeroMetric = heroMetricFor(nextHeroMetricKey(heroMetric.key));
     const taxContext = ui.taxOn ? " · post-tax" : "";
@@ -1147,7 +1164,13 @@
 
     const max = Math.max(...invs.map(invMagnitude), 1);
     invs.slice().sort((a, b) => invMagnitude(b) - invMagnitude(a)).slice(0, 18).forEach((inv, i, arr) => {
-      const n = el("span", `orbit-node${inv.Kind === "Debt" ? " debt" : ""}`);
+      const nodeMetric = inv.Kind === "Debt" ? "debt" : "assets";
+      const highlighted = heroMetric.key === "net" || heroMetric.key === nodeMetric;
+      const n = el("span", [
+        "orbit-node",
+        nodeMetric === "debt" ? "debt" : "asset",
+        highlighted ? "is-highlighted" : "is-dimmed"
+      ].join(" "));
       const value = invMagnitude(inv);
       const angle = (i / Math.max(arr.length, 1)) * 360 + (i % 2 ? 10 : -5);
       const dist = 132 + (i % 3) * 32;
@@ -1155,7 +1178,7 @@
       n.style.setProperty("--angle", angle + "deg");
       n.style.setProperty("--dist", dist + "px");
       n.style.setProperty("--size", size + "px");
-      n.style.setProperty("--c", inv.Kind === "Debt" ? heroColorForMetric("debt") : heroColorForMetric("assets"));
+      n.style.setProperty("--c", heroColorForMetric(nodeMetric));
       n.title = `${positionLabel(inv)} · ${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}`;
       orbit.appendChild(n);
     });
@@ -1288,11 +1311,19 @@
   function renderBiomePens(wrap, invs, max, totalCount) {
     const groups = institutionGroups(invs);
     groups.forEach(inst => {
-      const pen = el("section", "institution-pen");
+      const penLayout = institutionPenLayoutFor(inst, max);
+      const pen = el("section", `institution-pen is-${penLayout.kind}`);
       pen.setAttribute("aria-label", `${inst.name} pen, ${fmt$full(inst.value)}, ${inst.count} position${inst.count === 1 ? "" : "s"}`);
+      pen.style.setProperty("--pen-span", String(penLayout.span));
+      pen.style.setProperty("--pen-min-height", penLayout.minHeight + "px");
+      pen.style.setProperty("--pen-card-min-height", penLayout.cardMinHeight + "px");
+      pen.style.setProperty("--pen-yard-min", penLayout.yardMin + "px");
+      if (penLayout.width) pen.style.setProperty("--pen-width", penLayout.width + "px");
       const head = el("div", "institution-pen-head");
-      head.appendChild(el("h3", null, inst.name));
-      head.appendChild(el("span", null, `${fmt$(inst.value)} · ${inst.count} pos`));
+      const title = el("h3", "institution-pen-title", inst.name);
+      title.title = inst.name;
+      head.appendChild(title);
+      head.appendChild(el("span", "institution-pen-meta", `${fmt$(inst.value)} · ${inst.count} pos`));
       pen.appendChild(head);
       const yard = el("div", "institution-pen-yard");
       inst.holdings.forEach((inv, holdingIdx) => {
@@ -2136,14 +2167,14 @@
       renderAll();
     });
     $("#copy-new").addEventListener("click", () => {
-      const name = prompt("Name for the new portfolio", "Untitled");
+      const name = prompt("Name for the new ledger", "Untitled");
       if (name === null) return;
       Portfolios.create(name);
       resetContributionState();
       resetFloatPositionState();
       saveUiState();
       renderAll();
-      toast("New portfolio created");
+      toast("New ledger created");
     });
     $("#copy-dup").addEventListener("click", () => {
       const contributionState = serializeContributionState();
@@ -2417,7 +2448,7 @@
     $("#hero-empty").style.display = hasData ? "none" : "block";
     renderCopyBar();
     renderTable();
-    renderHeroDateTime();
+    renderHeroAmount();
     if (!hasData) { renderContribChips({ perTarget: 0, count: 0, total: 0 }); return; }
 
     syncContribIds();
@@ -2466,7 +2497,7 @@
     renderContribChips(proj.contrib);
     renderAmortizedDebtCosts();
     renderStats(proj, aggregateProj);
-    renderHeroExperience(proj);
+    renderHeroExperience();
     renderBiome();
     if (ui.projectionView === "simple") {
       aggregateLineChart($("#proj-chart"), aggregateProj);
@@ -2572,12 +2603,75 @@
     });
   }
 
+  function wireHeaderOverlay() {
+    const actions = $(".header-actions");
+    if (!actions) return;
+
+    const FLOAT_AFTER = 96;
+    const HIDE_AFTER = 140;
+    const DIRECTION_DELTA = 4;
+    let lastY = null;
+    let pending = false;
+
+    const scrollY = () => Math.max(0, window.scrollY || window.pageYOffset || 0);
+    const setVisible = visible => {
+      document.body.classList.toggle("header-actions-visible", visible);
+    };
+    const setFloating = floating => {
+      document.body.classList.toggle("header-actions-overlay", floating);
+      if (!floating) setVisible(false);
+    };
+
+    const sync = () => {
+      pending = false;
+      const y = scrollY();
+      const previous = lastY;
+      const delta = previous == null ? 0 : y - previous;
+      const floating = y > FLOAT_AFTER;
+      const hasFocus = actions.contains(document.activeElement);
+
+      setFloating(floating);
+      if (floating) {
+        if (previous == null || hasFocus || y < HIDE_AFTER || delta < -DIRECTION_DELTA) {
+          setVisible(true);
+        } else if (delta > DIRECTION_DELTA) {
+          setVisible(false);
+        }
+      }
+
+      lastY = y;
+    };
+
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(sync);
+    };
+
+    actions.addEventListener("focusin", () => {
+      if (scrollY() > FLOAT_AFTER) {
+        setFloating(true);
+        setVisible(true);
+      }
+    });
+    actions.addEventListener("pointerenter", () => {
+      if (scrollY() > FLOAT_AFTER) {
+        setFloating(true);
+        setVisible(true);
+      }
+    });
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    sync();
+  }
+
   /* ---------- controls wiring ---------- */
 
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
     const privacyToggle = $("#privacy-toggle");
+    const themeModeToggle = $("#theme-mode-toggle");
     syncProjectionControlsToDom();
     if (privacyToggle) {
       privacyToggle.addEventListener("click", () => {
@@ -2603,13 +2697,14 @@
       saveUiState();
       renderAll();
     });
-    // Theme picker — pure CSS swap via html[data-theme], no re-render needed.
-    document.querySelectorAll(".theme-toggle button").forEach(btn =>
-      btn.addEventListener("click", () => {
-        ui.theme = coerceTheme(btn.dataset.themeChoice);
+    // Night-mode toggle: dark maps to the native theme; non-dark maps to white.
+    if (themeModeToggle) {
+      themeModeToggle.addEventListener("click", () => {
+        ui.theme = ui.theme === "dark" ? LIGHT_TOGGLE_THEME : "dark";
         syncThemeToDom();
         saveUiState();
-      }));
+      });
+    }
     years.addEventListener("input", () => {
       ui.years = rangeValue(years.value, RANGE_LIMITS.years);
       years.value = String(ui.years);
@@ -2683,6 +2778,9 @@
     }
     Data.subscribe(refreshDatalists);
     refreshDatalists();
+
+    const addPanel = $("#add-form-panel");
+    if (addPanel) addPanel.hidden = false;
 
     // Optional fields use the same −/+ control: off stores "".
     const taxInput = $("#f-tax");
@@ -2851,10 +2949,12 @@
       if (notify) toast("No auto-priced tickers — values are manual");
       return { ok: false, priced: 0, total: 0 };
     }
-    const label = refreshBtn ? refreshBtn.textContent : "";
+    const label = refreshBtn ? refreshBtn.getAttribute("aria-label") || "Refresh live prices" : "";
     if (refreshBtn) {
       refreshBtn.disabled = true;
-      refreshBtn.textContent = "Pricing…";
+      refreshBtn.classList.add("is-busy");
+      refreshBtn.setAttribute("aria-label", "Refreshing live prices");
+      refreshBtn.title = "Refreshing live prices";
     }
     updateLivePriceStatus("Refreshing prices");
     try {
@@ -2882,7 +2982,9 @@
     } finally {
       if (refreshBtn) {
         refreshBtn.disabled = false;
-        refreshBtn.textContent = label;
+        refreshBtn.classList.remove("is-busy");
+        refreshBtn.setAttribute("aria-label", label);
+        refreshBtn.title = "Refresh live prices";
       }
     }
   }
@@ -2908,9 +3010,12 @@
 
     document.querySelectorAll(".load-json").forEach(b => b.addEventListener("click", async e => {
       const btn = e.currentTarget;
-      const label = btn.textContent;
+      const label = btn.getAttribute("aria-label") || "Import from clipboard";
+      const title = btn.title;
       btn.disabled = true;
-      btn.textContent = "Reading…";
+      btn.classList.add("is-busy");
+      btn.setAttribute("aria-label", "Reading clipboard import");
+      btn.title = "Reading clipboard import";
       try {
         const investments = parseClipboardBackup(await readClipboardText());
         Portfolios.importCopy("Imported from clipboard", investments);
@@ -2923,7 +3028,9 @@
         toast("Clipboard import failed: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = label;
+        btn.classList.remove("is-busy");
+        btn.setAttribute("aria-label", label);
+        btn.title = title;
       }
     }));
 
@@ -2955,11 +3062,12 @@
 
   loadStoredProjectionState();
   wireSettingsView();
+  wireHeaderOverlay();
   wireControls();
   wireForm();
   wireIO();
   wireCopies();
-  startHeroClock();
+  renderHeroAmount();
 
   // Portfolios.init() restores the active copy from localStorage (seeding a
   // "Default" from tickers.json only on first run), then we subscribe the

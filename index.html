@@ -29,17 +29,46 @@ try {
       <div class="wordmark">ColdData <em>Ledger</em></div>
       <div class="tagline">Local-first portfolio ledger</div>
     </div>
-    <div class="header-actions" role="group" aria-label="Portfolio display controls">
-      <button id="privacy-toggle" class="menu-toggle privacy-toggle" type="button" aria-pressed="false" aria-label="Hide monetary amounts" title="Hide monetary amounts">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M3.4 12s3.2-5.3 8.6-5.3 8.6 5.3 8.6 5.3-3.2 5.3-8.6 5.3S3.4 12 3.4 12Z"/>
-          <circle cx="12" cy="12" r="2.5"/>
-          <path class="privacy-slash" d="M5 19 19 5"/>
-        </svg>
-      </button>
-      <button id="ops-menu-toggle" class="menu-toggle" type="button" aria-controls="settings-view" aria-expanded="false" aria-label="Open portfolio settings" title="Open portfolio settings">
-        <span class="menu-lines" aria-hidden="true"><span></span><span></span><span></span></span>
-      </button>
+    <div class="header-actions">
+      <div class="header-icon-cluster" role="group" aria-label="Portfolio controls">
+        <button id="privacy-toggle" class="menu-toggle privacy-toggle" type="button" aria-pressed="false" aria-label="Hide monetary amounts" title="Hide monetary amounts">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3.4 12s3.2-5.3 8.6-5.3 8.6 5.3 8.6 5.3-3.2 5.3-8.6 5.3S3.4 12 3.4 12Z"/>
+            <circle cx="12" cy="12" r="2.5"/>
+            <path class="privacy-slash" d="M5 19 19 5"/>
+          </svg>
+        </button>
+        <button class="ledger-icon-button load-json" type="button" title="Import exported JSON from the clipboard" aria-label="Import from clipboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 3v11"/>
+            <path d="m7 9 5 5 5-5"/>
+            <path d="M5 17v2.5h14V17"/>
+          </svg>
+        </button>
+        <button id="copy-json" class="ledger-icon-button" type="button" title="Export backup to the clipboard" aria-label="Export to clipboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 14V3"/>
+            <path d="m7 8 5-5 5 5"/>
+            <path d="M5 17v2.5h14V17"/>
+          </svg>
+        </button>
+        <button id="refresh-prices" class="ledger-icon-button" type="button" title="Refresh live prices" aria-label="Refresh live prices">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M20 6v5h-5"/>
+            <path d="M4 18v-5h5"/>
+            <path d="M18.2 9A7 7 0 0 0 6.6 6.6L4 9"/>
+            <path d="M5.8 15a7 7 0 0 0 11.6 2.4L20 15"/>
+          </svg>
+        </button>
+        <button id="theme-mode-toggle" class="ledger-icon-button" type="button" aria-pressed="true" title="Switch to light theme" aria-label="Dark mode on. Switch to light theme.">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5 8.8 8.8 0 1 0 20.5 14.6Z"/>
+          </svg>
+        </button>
+        <button id="ops-menu-toggle" class="menu-toggle" type="button" aria-controls="settings-view" aria-expanded="false" aria-label="Open portfolio settings" title="Open portfolio settings">
+          <span class="menu-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -48,12 +77,17 @@ try {
     <div class="settings-inner">
       <!-- ===== ledger + add form ===== -->
       <section class="settings-ledger-section">
-        <div class="section-head">
-          <h2>Ledger</h2>
-          <span class="section-note">saved automatically · Export any time for a backup</span>
+        <div class="section-head ledger-head">
+          <div class="ledger-title-stack">
+            <div class="ledger-title-row">
+              <h2>Ledger</h2>
+            </div>
+            <span id="settings-active-portfolio" class="settings-context"></span>
+          </div>
+          <div class="settings-price-status live-price-status" data-live-price-status role="status" aria-live="polite">Not updated yet</div>
         </div>
         <div class="panel settings-ledger-panel">
-          <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add your first below.</div>
+          <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add a position below, or use + Add ledger to start a new ledger.</div>
           <div class="ledger-controls" id="ledger-controls">
             <label class="field ledger-sort-field">
               <span>Sort rows</span>
@@ -76,7 +110,7 @@ try {
           </div>
           <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
 
-          <div class="add-form settings-add-form">
+          <div id="add-form-panel" class="add-form settings-add-form">
             <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
             <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
             <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
@@ -124,14 +158,12 @@ try {
 
       <div class="settings-grid">
         <div class="settings-block settings-copy-block">
-          <div class="settings-block-head">
-            <span>Accessing</span>
-            <span id="settings-active-portfolio" class="settings-context"></span>
-          </div>
           <div class="copy-bar settings-copy-bar">
-            <span class="copy-label">Portfolio</span>
             <select id="copy-select" aria-label="Active portfolio"></select>
-            <button id="copy-new" title="Start a new empty portfolio">New</button>
+            <button id="copy-new" class="ledger-add-toggle" title="Start a new empty ledger">
+              <span class="add-plus" aria-hidden="true">+</span>
+              <span>Add ledger</span>
+            </button>
             <button id="copy-dup" title="Duplicate the current portfolio">Duplicate</button>
             <button id="copy-rename" title="Rename the current portfolio">Rename</button>
             <button id="copy-del" class="ghost-danger" title="Delete the current portfolio">Delete</button>
@@ -141,30 +173,6 @@ try {
                 <path d="M7.5 12.4l3 3 6-6.6" stroke="#0d1512" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </span>
-          </div>
-        </div>
-
-        <div class="settings-block">
-          <div class="settings-block-head">
-            <span>Clipboard &amp; pricing</span>
-          </div>
-          <div class="settings-actions">
-            <button class="load-json" title="Import exported JSON from the clipboard">Import</button>
-            <button id="refresh-prices">Refresh prices</button>
-            <button id="copy-json" class="primary">Export</button>
-          </div>
-          <div id="live-price-status" class="live-price-status" role="status" aria-live="polite">Not updated yet</div>
-        </div>
-
-        <div class="settings-block">
-          <div class="settings-block-head">
-            <span>Appearance</span>
-          </div>
-          <div class="theme-toggle" role="group" aria-label="Color theme">
-            <button type="button" data-theme-choice="dark" aria-pressed="true" title="Dark theme"><span class="theme-swatch" aria-hidden="true"></span>Dark</button>
-            <button type="button" data-theme-choice="white" aria-pressed="false" title="White theme"><span class="theme-swatch" aria-hidden="true"></span>White</button>
-            <button type="button" data-theme-choice="sand" aria-pressed="false" title="Sand theme"><span class="theme-swatch" aria-hidden="true"></span>Sand</button>
-            <button type="button" data-theme-choice="pink" aria-pressed="false" title="Pink theme"><span class="theme-swatch" aria-hidden="true"></span>Pink</button>
           </div>
         </div>
       </div>
@@ -189,11 +197,8 @@ try {
   <div id="dashboard" style="display:none;">
 
     <section class="hero-stage" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <div class="eyebrow">portfolio</div>
-        <h1 id="hero-title" class="hero-datetime-title"></h1>
-        <div class="hero-metrics" id="hero-metrics"></div>
-      </div>
+      <h1 id="hero-title" class="hero-amount-title"></h1>
+      <div class="hero-price-status live-price-status" data-live-price-status role="status" aria-live="polite">Not updated yet</div>
       <div class="hero-visual panel" id="hero-visual" aria-label="Portfolio spatial summary"></div>
     </section>
 
@@ -290,7 +295,7 @@ try {
     <!-- ===== new spatial explorations ===== -->
     <section>
       <div class="section-head">
-        <h2>Capital terrarium</h2>
+        <h2>Vehicles</h2>
         <div class="head-right biome-head-controls">
           <span class="section-note" id="biome-mode-note">each holding sized by value and grown from ledger semantics</span>
           <button type="button" id="biome-whistle" class="whistle-toggle" aria-pressed="false" aria-label="Cycle terrarium layout" title="Cycle terrarium layout">
