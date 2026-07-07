@@ -427,6 +427,21 @@ const Data = (() => {
   function assetTotal(taxOn) { return investments.filter(isAsset).reduce((s, i) => s + presentValue(i, taxOn), 0); }
   function debtTotal(taxOn) { return investments.filter(isDebt).reduce((s, i) => s + presentValue(i, taxOn), 0); }
 
+  function debtWeightedRate(taxOn) {
+    let weighted = 0;
+    let totalWeight = 0;
+    investments.filter(isDebt).forEach(inv => {
+      const rate = Number(inv["Nominal Rate"]);
+      if (!Number.isFinite(rate) || rate <= 0) return;
+      // Debt carry is weighted by current debt magnitude so larger balances set the hero run-rate.
+      const weight = presentValue(inv, taxOn);
+      if (weight <= 0) return;
+      weighted += weight * rate;
+      totalWeight += weight;
+    });
+    return totalWeight > 0 ? weighted / totalWeight : 0.05;
+  }
+
   function weightedRate() {
     const t = investments.reduce((s, i) => s + presentValue(i, false), 0);
     if (t === 0) return 0;
@@ -583,6 +598,6 @@ const Data = (() => {
     FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS,
     subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
     presentValue, netValue, taxRate, pricePerShare, inferAmortPayment, isAmortized, isAsset, isDebt,
-    total, assetTotal, debtTotal, weightedRate, groupBy, crossTab, aggregateProjection, projection
+    total, assetTotal, debtTotal, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection
   };
 })();

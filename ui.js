@@ -76,6 +76,7 @@
     years: 25,
     monthly: 1000,
     projectionView: "simple",
+    projectionControlsOpen: false,
     simpleRate: 0.08,
     simpleMonthly: 0,
     simpleMonthlyEnabled: false,
@@ -115,18 +116,18 @@
   const BIOME_MODE_META = {
     cards: {
       label: "card layout",
-      note: "each holding sized by value and grown from ledger semantics",
-      aria: "Terrarium card layout of portfolio holdings"
+      note: "Holdings",
+      aria: "Holdings"
     },
     float: {
       label: "free-floating garden",
-      note: "free-floating holdings · stable scatter by position",
-      aria: "Free-floating terrarium visualization of portfolio holdings"
+      note: "Holdings",
+      aria: "Holdings"
     },
     pens: {
       label: "institution pens",
-      note: "holdings organized into institution pens inside the terrarium",
-      aria: "Institution pens terrarium visualization of portfolio holdings"
+      note: "Institutions",
+      aria: "by institution"
     }
   };
 
@@ -154,6 +155,10 @@
 
   function coerceProjectionView(value) {
     return value === "detailed" || value === "simple" ? value : "simple";
+  }
+
+  function coerceProjectionControlsOpen(value) {
+    return value === true;
   }
 
   function nextBiomeModeKey(key) {
@@ -340,6 +345,7 @@
       if ("monthly" in projection) ui.monthly = rangeValue(projection.monthly, RANGE_LIMITS.monthly);
       if ("taxOn" in projection) ui.taxOn = projection.taxOn === true;
       if ("projectionView" in projection) ui.projectionView = coerceProjectionView(projection.projectionView);
+      if ("projectionControlsOpen" in projection) ui.projectionControlsOpen = coerceProjectionControlsOpen(projection.projectionControlsOpen);
       if ("simpleRate" in projection) ui.simpleRate = rangeValue(projection.simpleRate, RANGE_LIMITS.simpleRate);
       if ("simpleMonthly" in projection) ui.simpleMonthly = rangeValue(projection.simpleMonthly, RANGE_LIMITS.simpleMonthly);
       ui.simpleMonthlyEnabled = "simpleMonthlyEnabled" in projection
@@ -371,6 +377,7 @@
         monthly: rangeValue(ui.monthly, RANGE_LIMITS.monthly),
         taxOn: ui.taxOn === true,
         projectionView: coerceProjectionView(ui.projectionView),
+        projectionControlsOpen: coerceProjectionControlsOpen(ui.projectionControlsOpen),
         simpleRate: rangeValue(ui.simpleRate, RANGE_LIMITS.simpleRate),
         simpleMonthly: rangeValue(ui.simpleMonthly, RANGE_LIMITS.simpleMonthly),
         simpleMonthlyEnabled: ui.simpleMonthlyEnabled === true
@@ -446,8 +453,14 @@
     document.querySelectorAll(".tax-toggle").forEach(t => { t.checked = ui.taxOn; });
     syncPrivacyControlToDom();
     syncThemeToDom();
+    syncProjectionControlsOpenToDom();
     syncProjectionModeToDom();
     syncBiomeModeToDom();
+  }
+
+  function syncProjectionControlsOpenToDom() {
+    const panel = $(".proj-controls-panel");
+    if (panel) panel.open = coerceProjectionControlsOpen(ui.projectionControlsOpen);
   }
 
   function syncThemeToDom() {
@@ -476,8 +489,8 @@
     if (simpleBtn) simpleBtn.setAttribute("aria-pressed", String(simple));
     const note = $("#projection-mode-note");
     if (note) note.textContent = simple
-      ? "aggregate assets/debt · one rate · one contribution"
-      : "one layer per position · hover for detail";
+      ? "aggregate assets/debt"
+      : "hover for detail";
   }
 
   function syncBiomeModeToDom() {
@@ -523,23 +536,61 @@
 
   // The hero title is just the number: net worth (white), assets (green) or
   // debt (red), always to the cent. Clicking it cycles between the three.
+  function heroDerivedAmounts(metricKey, base) {
+    const yearly = metricKey === "debt"
+      ? base * Data.debtWeightedRate(ui.taxOn)
+      : base * 0.05 * 0.93;
+    return { yearly, monthly: yearly / 12 };
+  }
+
+  function cycleHeroMetric() {
+    ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
+    saveUiState();
+    renderAll();
+  }
+
+  function renderPlanetMetricEcho(metric, next, value, amount) {
+    const echo = $("#planet-metric-echo");
+    if (!echo) return;
+    echo.innerHTML = "";
+
+    const taxContext = ui.taxOn ? " · post-tax" : "";
+    const btn = el("button", `planet-amount-echo is-${metric.key}`, amount);
+    btn.type = "button";
+    btn.title = `Earth focus: ${metric.label}${taxContext} — click to show ${next.label}`;
+    btn.setAttribute("aria-label", `Earth focus ${metric.label}: ${amount}${ui.taxOn ? " post-tax" : ""}. Activate to show ${next.label}.`);
+    btn.addEventListener("click", cycleHeroMetric);
+
+    echo.append(
+      el("span", "planet-metric-kicker", `${metric.label}${taxContext}`),
+      btn
+    );
+  }
+
   function renderHeroAmount() {
     const title = $("#hero-title");
     if (!title) return;
     const metric = heroMetricFor(ui.heroMetric);
     const next = heroMetricFor(nextHeroMetricKey(metric.key));
-    const amount = fmt$cents(metric.value());
+    const value = metric.value();
+    const amount = fmt$cents(value);
     title.innerHTML = "";
     const btn = el("button", `hero-amount is-${metric.key}`, amount);
     btn.type = "button";
     btn.title = `${metric.label}${ui.taxOn ? " · post-tax" : ""} — click to show ${next.label}`;
     btn.setAttribute("aria-label", `${metric.label}: ${amount}${ui.taxOn ? " post-tax" : ""}. Activate to show ${next.label}.`);
-    btn.addEventListener("click", () => {
-      ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
-      saveUiState();
-      renderAll();
-    });
+    btn.addEventListener("click", cycleHeroMetric);
     title.appendChild(btn);
+    const derived = $("#hero-derived");
+    if (derived) {
+      const values = heroDerivedAmounts(metric.key, value);
+      derived.innerHTML = "";
+      derived.append(
+        el("span", "", fmt$cents(values.yearly)),
+        el("span", "", fmt$cents(values.monthly))
+      );
+    }
+    renderPlanetMetricEcho(metric, next, value, amount);
   }
 
   /* ---------- tooltip & toast ---------- */
@@ -1150,16 +1201,12 @@
     const heroMetricValue = heroMetric.value();
     const nextHeroMetric = heroMetricFor(nextHeroMetricKey(heroMetric.key));
     const taxContext = ui.taxOn ? " · post-tax" : "";
-    const core = el("button", "hero-core", `<b>${fmt$(heroMetricValue)}</b><span>${heroMetric.label}${taxContext}</span>`);
+    const core = el("button", "hero-core earth-core", `<span class="earth-atmosphere" aria-hidden="true"></span><span class="earth-clouds" aria-hidden="true"></span>`);
     core.type = "button";
-    core.title = `Show ${nextHeroMetric.label}`;
+    core.title = `Earth view: showing ${heroMetric.label}${taxContext}. Click to show ${nextHeroMetric.label}.`;
     core.style.setProperty("--hero-amount-color", heroColorForMetric(heroMetric.key));
     core.setAttribute("aria-label", `Showing ${heroMetric.label}: ${fmt$full(heroMetricValue)}${ui.taxOn ? " post-tax" : ""}. Activate to show ${nextHeroMetric.label}.`);
-    core.addEventListener("click", () => {
-      ui.heroMetric = nextHeroMetricKey(ui.heroMetric);
-      saveUiState();
-      renderAll();
-    });
+    core.addEventListener("click", cycleHeroMetric);
     orbit.appendChild(core);
 
     const max = Math.max(...invs.map(invMagnitude), 1);
@@ -2672,7 +2719,14 @@
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
     const privacyToggle = $("#privacy-toggle");
     const themeModeToggle = $("#theme-mode-toggle");
+    const projectionControlsPanel = $(".proj-controls-panel");
     syncProjectionControlsToDom();
+    if (projectionControlsPanel) {
+      projectionControlsPanel.addEventListener("toggle", () => {
+        ui.projectionControlsOpen = projectionControlsPanel.open;
+        saveUiState();
+      });
+    }
     if (privacyToggle) {
       privacyToggle.addEventListener("click", () => {
         ui.privacyMode = !ui.privacyMode;

@@ -1101,13 +1101,26 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 
 .hero-stage {
   display: grid; grid-template-columns: 1fr;
-  grid-template-rows: auto auto minmax(300px, 1fr);
   gap: 10px; margin-top: 44px;
-  min-height: clamp(620px, calc(100svh - 156px), 780px);
-  align-content: space-between;
+  min-height: clamp(240px, 36svh, 420px);
+  place-content: center;
 }
 .hero-amount-title {
   margin: 0; text-align: center; min-width: 0;
+}
+.hero-derived {
+  justify-self: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: clamp(14px, 3vw, 28px);
+  margin-top: -4px;
+  font-family: var(--mono);
+  font-size: clamp(.92rem, 1.8vw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.035em;
+  color: var(--muted);
+  opacity: .78;
 }
 .hero-price-status {
   justify-self: center;
@@ -1133,13 +1146,65 @@ html[data-theme] .hero-amount.is-assets { color: var(--asset); }
 .hero-amount.is-debt,
 html[data-theme] .hero-amount.is-debt { color: var(--danger); }
 
-.hero-visual {
-  align-self: end;
-  margin-top: 18px;
-  min-height: 390px; padding: 36px 0 16px; isolation: isolate; display: grid; place-items: end center;
+.planet-stage {
+  margin-top: 64px;
+}
+.planet-metric-echo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: -4px 0 16px;
+  text-align: center;
+}
+.planet-metric-kicker {
+  font-family: var(--mono);
+  font-size: .62rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.planet-amount-echo {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0 .08em;
+  cursor: pointer;
+  font-family: var(--display);
+  font-weight: 560;
+  font-size: clamp(1.65rem, 4.4vw, 4rem);
+  line-height: .92;
+  letter-spacing: -.055em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  opacity: .82;
+  transition: color .18s ease, opacity .18s ease;
+}
+.planet-amount-echo:hover {
+  opacity: 1;
+}
+.planet-amount-echo:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 8px;
+  border-radius: 8px;
+}
+html[data-theme] .planet-amount-echo {
+  color: var(--ink);
+}
+.planet-amount-echo.is-assets,
+html[data-theme] .planet-amount-echo.is-assets {
+  color: var(--asset);
+}
+.planet-amount-echo.is-debt,
+html[data-theme] .planet-amount-echo.is-debt {
+  color: var(--danger);
+}
+.planet-visual {
+  min-height: clamp(420px, 62svh, 660px); padding: 36px 0 24px; isolation: isolate; display: grid; place-items: center;
   background:
-    radial-gradient(circle at 52% 76%, rgba(127,176,105,.18), transparent 18%),
-    radial-gradient(circle at 50% 72%, rgba(110,169,163,.13), transparent 38%),
+    radial-gradient(circle at 50% 55%, rgba(48,126,181,.2), transparent 17%),
+    radial-gradient(circle at 50% 56%, rgba(110,169,163,.15), transparent 40%),
+    radial-gradient(circle at 50% 70%, rgba(127,176,105,.12), transparent 48%),
     linear-gradient(145deg, rgba(255,255,255,.105), rgba(255,255,255,.018));
 }
 .hero-orbit {
@@ -1161,6 +1226,7 @@ html[data-theme] .hero-amount.is-debt { color: var(--danger); }
     radial-gradient(circle at 37% 29%, rgba(255,255,255,.9), color-mix(in srgb, var(--hero-core-color) 42%, white) 24%, color-mix(in srgb, var(--hero-core-color) 18%, transparent) 56%, color-mix(in srgb, var(--canvas) 92%, transparent) 100%);
   box-shadow: 0 0 90px color-mix(in srgb, var(--hero-core-color) 28%, transparent), inset -16px -22px 46px rgba(0,0,0,.48);
   transition: box-shadow .18s ease, filter .18s ease;
+  overflow: hidden;
 }
 .hero-core:hover {
   filter: brightness(1.06);
@@ -1175,7 +1241,66 @@ html[data-theme] .hero-amount.is-debt { color: var(--danger); }
   color: var(--hero-amount-color, var(--net, var(--net-worth, #a78bfa)));
   letter-spacing: -.08em; transform: translateY(-2px);
 }
-.hero-core span { display: block; margin-top: 2px; font-family: var(--mono); font-size: .62rem; color: #02120f; letter-spacing: .16em; text-transform: uppercase; transform: translateY(-5px); }
+.hero-core .hero-core-label { display: block; margin-top: 2px; font-family: var(--mono); font-size: .62rem; color: #02120f; letter-spacing: .16em; text-transform: uppercase; transform: translateY(-5px); }
+.hero-core.earth-core {
+  --earth-ocean: #2f7fb9;
+  --earth-deep: #0b3567;
+  --earth-land: #6cae62;
+  --earth-land-dark: #2f7a52;
+  width: clamp(170px, 36%, 240px);
+  background:
+    radial-gradient(circle at 35% 27%, rgba(255,255,255,.92), rgba(255,255,255,.28) 12%, transparent 24%),
+    radial-gradient(circle at 36% 35%, var(--earth-land) 0 13%, transparent 14%),
+    radial-gradient(ellipse at 63% 32%, var(--earth-land-dark) 0 14%, transparent 15%),
+    radial-gradient(ellipse at 54% 64%, var(--earth-land) 0 18%, transparent 19%),
+    radial-gradient(ellipse at 32% 70%, var(--earth-land-dark) 0 10%, transparent 11%),
+    radial-gradient(circle at 48% 48%, #3c95ce 0 42%, var(--earth-deep) 76%, #061a31 100%);
+  box-shadow:
+    0 0 70px rgba(79,156,213,.34),
+    0 0 38px color-mix(in srgb, var(--hero-core-color) 22%, transparent),
+    inset -24px -30px 54px rgba(0,0,0,.52),
+    inset 12px 12px 28px rgba(255,255,255,.16);
+}
+.hero-core.earth-core:hover {
+  box-shadow:
+    0 0 86px rgba(79,156,213,.42),
+    0 0 0 1px color-mix(in srgb, var(--hero-core-color) 28%, transparent),
+    0 0 44px color-mix(in srgb, var(--hero-core-color) 24%, transparent),
+    inset -24px -30px 54px rgba(0,0,0,.52),
+    inset 12px 12px 28px rgba(255,255,255,.18);
+}
+.hero-core.earth-core:focus-visible {
+  box-shadow:
+    0 0 90px rgba(79,156,213,.46),
+    0 0 0 1px color-mix(in srgb, var(--hero-core-color) 30%, transparent),
+    0 0 48px color-mix(in srgb, var(--hero-core-color) 26%, transparent),
+    inset -24px -30px 54px rgba(0,0,0,.52),
+    inset 12px 12px 28px rgba(255,255,255,.18);
+}
+.hero-core .earth-atmosphere,
+.hero-core .earth-clouds {
+  position: absolute;
+  inset: 0;
+  display: block;
+  margin: 0;
+  border-radius: inherit;
+  transform: none;
+  pointer-events: none;
+}
+.hero-core .earth-atmosphere {
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255,255,255,.42), transparent 28%),
+    radial-gradient(circle at 50% 50%, transparent 63%, rgba(143,210,255,.55) 68%, transparent 72%);
+  mix-blend-mode: screen;
+}
+.hero-core .earth-clouds {
+  background:
+    linear-gradient(17deg, transparent 25%, rgba(255,255,255,.72) 27%, rgba(255,255,255,.38) 30%, transparent 35%),
+    linear-gradient(-14deg, transparent 52%, rgba(255,255,255,.54) 54%, rgba(255,255,255,.2) 57%, transparent 62%),
+    radial-gradient(ellipse at 70% 53%, rgba(255,255,255,.58) 0 9%, transparent 10%),
+    radial-gradient(ellipse at 42% 73%, rgba(255,255,255,.44) 0 8%, transparent 9%);
+  opacity: .78;
+}
 .orbit-node {
   position: absolute; left: 50%; top: 50%; width: var(--size); aspect-ratio: 1;
   margin: calc(var(--size) / -2); border-radius: 50%;
@@ -1707,8 +1832,8 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .add-form { grid-template-columns: repeat(2, 1fr); }
   .settings-add-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr; justify-content: stretch; }
-  .hero-stage { min-height: clamp(560px, calc(100svh - 132px), 680px); }
-  .hero-visual { min-height: 360px; padding-top: 28px; }
+  .hero-stage { min-height: clamp(220px, 32svh, 360px); }
+  .planet-visual { min-height: 380px; padding-top: 28px; }
   .biome-view.is-pens { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 }
 @media (max-width: 540px) {
@@ -1759,9 +1884,9 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .donut-grid { grid-template-columns: minmax(0, 1fr); }
   .donut-body { flex-direction: column; align-items: flex-start; }
   .donut-body svg { align-self: center; }
-  .hero-stage { min-height: clamp(500px, calc(100svh - 116px), 620px); gap: 22px; }
+  .hero-stage { min-height: clamp(190px, 30svh, 300px); gap: 22px; }
   .hero-amount { font-size: min(3.1rem, 13vw); letter-spacing: -.045em; }
-  .hero-visual { min-height: 300px; padding: 22px 0 12px; }
+  .planet-visual { min-height: 320px; padding: 22px 0 16px; }
   .hero-orbit { --orbit-scale: .66; width: min(100%, 360px); }
   .proj-controls-panel summary { align-items: flex-start; flex-direction: column; gap: 5px; }
   #proj-controls-summary { text-align: left; }

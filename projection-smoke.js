@@ -105,9 +105,11 @@ approx(simpleContributionDisabled.assets[12], simple.assets[12], "disabled simpl
 assert.equal(simpleContributionDisabled.contribution.monthly, 0, "disabled simple contribution reports zero applied monthly");
 
 assert.match(uiSource, /projectionView:\s*"simple"/, "simple projection is the no-history default view");
+assert.match(uiSource, /projectionControlsOpen:\s*false/, "projection controls start collapsed without saved state");
 assert.match(uiSource, /simpleMonthlyEnabled:\s*false/, "simple contribution starts disabled without saved amount");
 assert.match(uiSource, /: ui\.simpleMonthly > 0;/, "legacy nonzero simple monthly amount migrates to enabled");
 assert.match(uiSource, /monthlyContribution:\s*effectiveSimpleMonthly\(\)/, "simple projection uses enabled-state effective monthly contribution");
 assert.match(uiSource, /function coerceProjectionView\(value\)[\s\S]*return value === "detailed" \|\| value === "simple" \? value : "simple";/, "invalid persisted projection view falls back to simple");
+assert.match(uiSource, /function coerceProjectionControlsOpen\(value\)[\s\S]*return value === true;/, "invalid persisted projection controls state falls back to collapsed");
 
 console.log("ok - projection amortization and simple contribution smoke");
