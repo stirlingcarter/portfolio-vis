@@ -10,12 +10,16 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="ambient-orb orb-a" aria-hidden="true"></div>
+<div class="ambient-orb orb-b" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
 <div class="wrap">
 
   <header>
     <div>
+      <div class="eyebrow">Private portfolio lab</div>
       <div class="wordmark">ColdData <em>Ledger</em></div>
-      <div class="tagline">Tag-driven portfolio · local &amp; private</div>
+      <div class="tagline">Local-first portfolio ledger · no server, no account</div>
     </div>
     <div class="header-actions">
       <button class="load-json">Import</button>
@@ -44,9 +48,12 @@
 
   <!-- ============ EMPTY STATE ============ -->
   <div id="hero-empty" class="panel empty-state" style="margin-top:44px; display:none;">
-    <div class="big">An empty ledger is an invitation.</div>
+    <div class="empty-visual" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+    <div class="big">No positions yet.</div>
     <p>Add positions below, or import a saved backup. Every chart on this
-       page is built from the tags you assign — institution, account type, vehicle, vehicle category, ticker.</p>
+       page is built from the tags you assign: institution, account type, vehicle, vehicle category, ticker.</p>
     <div class="btn-row">
       <button class="load-json">Import backup</button>
       <button id="seed-btn">Load sample portfolio</button>
@@ -55,6 +62,16 @@
 
   <!-- ============ DASHBOARD ============ -->
   <div id="dashboard" style="display:none;">
+
+    <section class="hero-stage" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow">Portfolio overview</div>
+        <h1 id="hero-title">Portfolio, debt, and projection in one view.</h1>
+        <p>Manage positions locally, review holdings by tag, and project net worth with the controls below.</p>
+        <div class="hero-metrics" id="hero-metrics"></div>
+      </div>
+      <div class="hero-visual panel" id="hero-visual" aria-label="Portfolio spatial summary"></div>
+    </section>
 
     <div class="stats">
       <div class="panel stat">
@@ -79,10 +96,31 @@
       </div>
     </div>
 
+    <!-- ===== new spatial explorations ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Capital terrarium</h2>
+        <span class="section-note">each holding sized by value and colored by vehicle</span>
+      </div>
+      <div class="panel biome-panel">
+        <div id="biome-view" class="biome-view" aria-label="Entity visualization of portfolio holdings"></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Tag network</h2>
+        <span class="section-note">institution, account, and position relationships</span>
+      </div>
+      <div class="panel">
+        <div id="constellation-view"></div>
+      </div>
+    </section>
+
     <!-- ===== projection ===== -->
     <section id="projection">
       <div class="section-head">
-        <h2>The compounding mountain</h2>
+        <h2>Projection</h2>
         <span class="section-note">one layer per position · hover for detail</span>
       </div>
       <div class="panel">
@@ -186,7 +224,27 @@
     </div>
     <div class="panel">
       <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add your first below.</div>
-      <div class="table-scroll" id="ledger-table-wrap">
+      <div class="ledger-controls" id="ledger-controls">
+        <label class="field ledger-sort-field">
+          <span>Sort rows</span>
+          <select id="ledger-sort" aria-label="Ledger sort">
+            <option value="ID">ID</option>
+            <option value="Ticker">Ticker</option>
+            <option value="Institution">Institution</option>
+            <option value="Account Type">Account type</option>
+            <option value="Kind">Kind</option>
+            <option value="Category">Vehicle</option>
+            <option value="Subcategory">Vehicle category</option>
+          </select>
+        </label>
+        <button id="ledger-sort-dir" type="button" aria-label="Reverse ledger sort">A-Z</button>
+        <label class="toggle">
+          <input type="checkbox" id="ledger-by-institution">
+          <span class="track"></span>
+          <span class="t-label">By institution</span>
+        </label>
+      </div>
+      <div class="ledger-table-wrap" id="ledger-table-wrap">
         <table>
           <thead>
             <tr>

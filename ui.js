@@ -9,10 +9,10 @@
 
   // Wide, hue-varied palette ordered so adjacent picks contrast strongly.
   const PALETTE = [
-    "#e0b25c", "#6fb8a8", "#c98bb9", "#7a9ce0", "#a3c46a",
-    "#e0785f", "#5fc2d9", "#d99a52", "#9d7fe0", "#79c99b",
-    "#d96b6b", "#c9d96a", "#8fa5b0", "#e08fb0", "#6ad9c0",
-    "#b0876a"
+    "#78ffd6", "#75d7ff", "#f4d96c", "#b994ff", "#ff7bbd",
+    "#8dff8f", "#ff9f6e", "#6be8ff", "#d3ff62", "#ff8776",
+    "#a7b5ff", "#6fffb8", "#ffc46b", "#d486ff", "#9df1ff",
+    "#f7a7c8"
   ];
   const colorCache = {};
   let colorIdx = 0;
@@ -40,6 +40,7 @@
   // Full dollars-and-cents — used in the ledger where exact valuations matter.
   const fmt$cents = v => "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = v => (v * 100).toFixed(1) + "%";
+  const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
 
   // Whether we should even attempt a live quote for a position. Call-signs like
   // HOUSE / DEBT / MORT and cash/loan/real-estate rows are user-valued, not
@@ -70,7 +71,10 @@
     contribIds: new Set(),
     contribAmounts: new Map(), // exact monthly dollars per selected position after user edits
     contribTouched: false,  // once the user picks targets, stop auto-selecting new ones
-    editingId: null         // ledger row currently being edited in place (or null)
+    editingId: null,        // ledger row currently being edited in place (or null)
+    ledgerSort: "ID",
+    ledgerSortDir: "asc",
+    ledgerByInstitution: false
   };
 
   const $ = sel => document.querySelector(sel);
@@ -340,11 +344,266 @@
     if (xtab.rows.length === 0) container.appendChild(el("div", "file-note", "No positions yet."));
   }
 
+  /* ---------- spatial 2026 visualizations ---------- */
+
+  const cleanTag = v => String(v || "—").trim() || "—";
+  const invMagnitude = inv => Data.presentValue(inv, ui.taxOn);
+  const shapeFor = inv => {
+    const category = cleanTag(inv.Category).toLowerCase();
+    if (inv.Kind === "Debt") return "debt";
+    if (category.includes("crypto") || category.includes("bond") || category.includes("cash")) return "crystal";
+    if (category.includes("real") || category.includes("stock") || category.includes("fund")) return "plant";
+    return "vehicle";
+  };
+
+  function renderHeroExperience(proj) {
+    const metrics = $("#hero-metrics");
+    const stage = $("#hero-visual");
+    if (!metrics || !stage) return;
+
+    const invs = Data.all();
+    const assets = Data.assetTotal(ui.taxOn);
+    const debts = Data.debtTotal(ui.taxOn);
+    const end = proj.totals[proj.totals.length - 1];
+    const gain = end - Data.total(ui.taxOn);
+    metrics.innerHTML = `
+      <span class="hero-chip"><b>${fmt$full(assets)}</b> gross assets</span>
+      <span class="hero-chip"><b>${fmt$full(debts)}</b> debts</span>
+      <span class="hero-chip"><b>${fmt$(Math.max(gain, 0))}</b> projected growth</span>
+      <span class="hero-chip"><b>${fmtPct(Data.weightedRate())}</b> blended real rate</span>`;
+
+    stage.innerHTML = "";
+    const orbit = el("div", "hero-orbit");
+    [
+      { inset: "7%", rot: "8deg" },
+      { inset: "18%", rot: "-28deg" },
+      { inset: "29%", rot: "42deg" }
+    ].forEach(r => {
+      const ring = el("span", "hero-ring");
+      ring.style.setProperty("--inset", r.inset);
+      ring.style.setProperty("--rot", r.rot);
+      orbit.appendChild(ring);
+    });
+
+    const core = el("div", "hero-core", `<b>${fmt$(Data.total(ui.taxOn))}</b><span>${ui.taxOn ? "post-tax" : "net worth"}</span>`);
+    orbit.appendChild(core);
+
+    const max = Math.max(...invs.map(invMagnitude), 1);
+    invs.slice().sort((a, b) => invMagnitude(b) - invMagnitude(a)).slice(0, 18).forEach((inv, i, arr) => {
+      const n = el("span", `orbit-node${inv.Kind === "Debt" ? " debt" : ""}`);
+      const value = invMagnitude(inv);
+      const angle = (i / Math.max(arr.length, 1)) * 360 + (i % 2 ? 10 : -5);
+      const dist = 132 + (i % 3) * 32;
+      const size = clamp(12 + Math.sqrt(value / max) * 34, 12, 46);
+      n.style.setProperty("--angle", angle + "deg");
+      n.style.setProperty("--dist", dist + "px");
+      n.style.setProperty("--size", size + "px");
+      n.style.setProperty("--c", colorFor(inv.Category || inv.Ticker));
+      n.title = `${positionLabel(inv)} · ${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}`;
+      orbit.appendChild(n);
+    });
+    stage.appendChild(orbit);
+  }
+
+  function entityMarkup(shape) {
+    if (shape === "debt") return `<div class="entity debt"><span class="stone"></span></div>`;
+    if (shape === "crystal") return `<div class="entity crystal"><span class="facet"></span></div>`;
+    if (shape === "vehicle") {
+      return `<div class="entity vehicle"><span class="body"></span><span class="cab"></span><span class="wheel a"></span><span class="wheel b"></span></div>`;
+    }
+    return `<div class="entity plant"><span class="stem"></span><span class="leaf a"></span><span class="leaf b"></span><span class="leaf c"></span></div>`;
+  }
+
+  function renderBiome() {
+    const wrap = $("#biome-view");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    const invs = Data.all().slice().sort((a, b) => invMagnitude(b) - invMagnitude(a));
+    const max = Math.max(...invs.map(invMagnitude), 1);
+    invs.slice(0, 28).forEach((inv, idx) => {
+      const value = invMagnitude(inv);
+      const color = inv.Kind === "Debt" ? "var(--danger)" : colorFor(inv.Category || inv.Ticker);
+      const shape = shapeFor(inv);
+      const card = el("div", "entity-card");
+      card.tabIndex = 0;
+      card.setAttribute("role", "img");
+      card.setAttribute("aria-label", `${positionLabel(inv)}, ${cleanTag(inv.Category)}, ${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}`);
+      card.style.setProperty("--entity-color", color);
+      card.style.setProperty("--tilt", (idx % 2 ? "-4deg" : "4deg"));
+      card.innerHTML = `
+        <div class="entity-card-lift">
+          ${entityMarkup(shape)}
+          <div class="entity-ground"></div>
+          <div class="entity-label"><b>${inv.Ticker || "—"}</b><span>${fmt$(value)} · ${cleanTag(inv.Category)}</span></div>
+        </div>`;
+      card.querySelector(".entity").style.setProperty("--h", clamp(92 + Math.sqrt(value / max) * 148, 92, 240) + "px");
+      card.addEventListener("mousemove", e =>
+        showTip(`<b>${positionLabel(inv)}</b><br><span class="tt-k">${cleanTag(inv.Institution)} · ${cleanTag(inv["Account Type"])}</span><br>${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, e.clientX, e.clientY));
+      card.addEventListener("mouseleave", hideTip);
+      card.addEventListener("focus", () => {
+        const r = card.getBoundingClientRect();
+        showTip(`<b>${positionLabel(inv)}</b><br>${fmt$full(value)} · ${cleanTag(inv.Category)}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, r.left + r.width / 2, r.top);
+      });
+      card.addEventListener("blur", hideTip);
+      wrap.appendChild(card);
+    });
+    if (invs.length > 28) wrap.appendChild(el("div", "file-note", `Showing the 28 largest holdings · ${invs.length - 28} more in the ledger and charts below.`));
+  }
+
+  function renderConstellation() {
+    const container = $("#constellation-view");
+    if (!container) return;
+    container.innerHTML = "";
+    const invs = Data.all();
+    if (!invs.length) { container.appendChild(el("div", "file-note", "No positions yet.")); return; }
+
+    const W = 1080, H = 430, cx = W / 2, cy = H / 2;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "constellation-svg", role: "img", "aria-label": "Institution, account, and position constellation" });
+    const insts = [...new Set(invs.map(i => cleanTag(i.Institution)))];
+    const maxValue = Math.max(...invs.map(invMagnitude), 1);
+    const instPos = new Map();
+    const accountPos = new Map();
+    const posById = new Map();
+
+    insts.forEach((inst, i) => {
+      const a = -Math.PI / 2 + (i / Math.max(insts.length, 1)) * Math.PI * 2;
+      instPos.set(inst, { x: cx + Math.cos(a) * 285, y: cy + Math.sin(a) * 128, angle: a });
+    });
+
+    insts.forEach(inst => {
+      const invForInst = invs.filter(inv => cleanTag(inv.Institution) === inst);
+      const accounts = [...new Set(invForInst.map(i => cleanTag(i["Account Type"])))];
+      const hub = instPos.get(inst);
+      accounts.forEach((acct, j) => {
+        const a = hub.angle + ((j - (accounts.length - 1) / 2) * .52);
+        const pos = { x: hub.x + Math.cos(a) * 92, y: hub.y + Math.sin(a) * 62 };
+        accountPos.set(inst + "|" + acct, pos);
+      });
+    });
+
+    accountPos.forEach((pos, key) => {
+      const inst = key.split("|")[0];
+      const hub = instPos.get(inst);
+      svg.appendChild(svgEl("line", { x1: hub.x, y1: hub.y, x2: pos.x, y2: pos.y, class: "const-link" }));
+    });
+
+    invs.forEach((inv, i) => {
+      const inst = cleanTag(inv.Institution), acct = cleanTag(inv["Account Type"]);
+      const anchor = accountPos.get(inst + "|" + acct) || instPos.get(inst) || { x: cx, y: cy };
+      const siblings = invs.filter(x => cleanTag(x.Institution) === inst && cleanTag(x["Account Type"]) === acct);
+      const idx = siblings.findIndex(x => x.ID === inv.ID);
+      const a = (idx / Math.max(siblings.length, 1)) * Math.PI * 2 + i * .17;
+      const dist = 42 + (idx % 4) * 15;
+      const x = clamp(anchor.x + Math.cos(a) * dist, 30, W - 30);
+      const y = clamp(anchor.y + Math.sin(a) * dist, 28, H - 28);
+      svg.appendChild(svgEl("line", { x1: anchor.x, y1: anchor.y, x2: x, y2: y, class: `const-link${inv.Kind === "Debt" ? " debt" : ""}` }));
+      posById.set(inv.ID, { x, y });
+    });
+
+    instPos.forEach((pos, inst) => {
+      const value = invs.filter(i => cleanTag(i.Institution) === inst).reduce((s, i) => s + invMagnitude(i), 0);
+      svg.appendChild(svgEl("circle", { cx: pos.x, cy: pos.y, r: clamp(22 + Math.sqrt(value / maxValue) * 22, 22, 54), class: "const-hub" }));
+      const label = svgEl("text", { x: pos.x, y: pos.y + 4, "text-anchor": "middle", class: "const-label" });
+      label.textContent = inst;
+      svg.appendChild(label);
+    });
+
+    accountPos.forEach((pos, key) => {
+      const acct = key.split("|")[1];
+      svg.appendChild(svgEl("circle", { cx: pos.x, cy: pos.y, r: 14, class: "const-account" }));
+      const label = svgEl("text", { x: pos.x, y: pos.y + 28, "text-anchor": "middle", class: "const-value" });
+      label.textContent = acct;
+      svg.appendChild(label);
+    });
+
+    invs.slice().sort((a, b) => invMagnitude(a) - invMagnitude(b)).forEach(inv => {
+      const pos = posById.get(inv.ID);
+      if (!pos) return;
+      const value = invMagnitude(inv);
+      const node = svgEl("circle", {
+        cx: pos.x, cy: pos.y,
+        r: clamp(5 + Math.sqrt(value / maxValue) * 26, 5, 31),
+        fill: inv.Kind === "Debt" ? "var(--danger)" : colorFor(inv.Category || inv.Ticker),
+        class: "const-node"
+      });
+      node.addEventListener("mousemove", e =>
+        showTip(`<b>${positionLabel(inv)}</b><br>${cleanTag(inv.Institution)} · ${cleanTag(inv["Account Type"])}<br>${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}<br><span class="tt-k">${cleanTag(inv.Category)} · ${cleanTag(inv.Subcategory)}</span>`, e.clientX, e.clientY));
+      node.addEventListener("mouseleave", hideTip);
+      svg.appendChild(node);
+      if (value / maxValue > .12) {
+        const label = svgEl("text", { x: pos.x, y: pos.y - 12, "text-anchor": "middle", class: "const-label" });
+        label.textContent = inv.Ticker || "#" + inv.ID;
+        svg.appendChild(label);
+      }
+    });
+    container.appendChild(svg);
+  }
+
   /* ---------- ledger table ---------- */
 
   const pill = (txt) => txt
     ? `<span class="tag-pill" style="color:${colorFor(txt)};border-color:${colorFor(txt)}55">${txt}</span>`
     : `<span style="color:var(--faint)">—</span>`;
+
+  const LEDGER_HEADERS = `
+    <thead>
+      <tr>
+        <th class="num">ID</th><th>Ticker</th><th>Institution</th><th>Account</th>
+        <th>Kind</th><th>Vehicle</th><th>Vehicle Category</th>
+        <th class="num">Shares</th><th class="num">Price</th><th class="num">Value</th><th class="num">Rate</th><th class="num">Tax</th><th>Amort</th><th></th>
+      </tr>
+    </thead>`;
+
+  function ledgerSortValue(inv) {
+    if (ui.ledgerSort === "ID") return Number(inv.ID) || 0;
+    return cleanTag(inv[ui.ledgerSort]).toLocaleLowerCase();
+  }
+
+  function sortedLedgerRows(rows) {
+    const dir = ui.ledgerSortDir === "desc" ? -1 : 1;
+    return rows.slice().sort((a, b) => {
+      const av = ledgerSortValue(a), bv = ledgerSortValue(b);
+      let cmp = typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
+      if (cmp === 0) cmp = Number(a.ID) - Number(b.ID);
+      return cmp * dir;
+    });
+  }
+
+  function appendLedgerRows(tbody, rows) {
+    rows.forEach(inv =>
+      tbody.appendChild(inv.ID === ui.editingId ? editRow(inv) : displayRow(inv)));
+  }
+
+  function ledgerTable(rows) {
+    const scroll = el("div", "table-scroll");
+    const table = el("table");
+    table.innerHTML = `${LEDGER_HEADERS}<tbody></tbody>`;
+    appendLedgerRows(table.querySelector("tbody"), rows);
+    scroll.appendChild(table);
+    return scroll;
+  }
+
+  function renderGroupedLedger(wrap, rows) {
+    const groups = new Map();
+    rows.forEach(inv => {
+      const institution = cleanTag(inv.Institution);
+      if (!groups.has(institution)) groups.set(institution, []);
+      groups.get(institution).push(inv);
+    });
+    [...groups.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })).forEach(institution => {
+      const groupRows = groups.get(institution);
+      const total = groupRows.reduce((sum, inv) => sum + Data.presentValue(inv, false), 0);
+      const group = el("div", "ledger-group");
+      const head = el("div", "ledger-group-head");
+      head.appendChild(el("h3", null, institution));
+      head.appendChild(el("span", null, `${fmt$full(total)} · ${groupRows.length} position${groupRows.length === 1 ? "" : "s"}`));
+      group.appendChild(head);
+      group.appendChild(ledgerTable(sortedLedgerRows(groupRows)));
+      wrap.appendChild(group);
+    });
+  }
 
   // A number input paired with a −/+ button so optional numeric fields can be
   // removed (stored as ""). read() returns "" when off.
@@ -574,14 +833,17 @@
   }
 
   function renderTable() {
-    const tbody = $("#ledger-body");
-    tbody.innerHTML = "";
+    const wrap = $("#ledger-table-wrap");
+    const controls = $("#ledger-controls");
+    const rows = Data.all();
     const live = new Set(Data.all().map(i => i.ID));
     if (ui.editingId != null && !live.has(ui.editingId)) ui.editingId = null;
-    Data.all().forEach(inv =>
-      tbody.appendChild(inv.ID === ui.editingId ? editRow(inv) : displayRow(inv)));
-    $("#ledger-empty").style.display = Data.all().length ? "none" : "block";
-    $("#ledger-table-wrap").style.display = Data.all().length ? "block" : "none";
+    wrap.innerHTML = "";
+    if (ui.ledgerByInstitution) renderGroupedLedger(wrap, rows);
+    else wrap.appendChild(ledgerTable(sortedLedgerRows(rows)));
+    $("#ledger-empty").style.display = rows.length ? "none" : "block";
+    wrap.style.display = rows.length ? "" : "none";
+    if (controls) controls.style.display = rows.length ? "" : "none";
   }
 
   /* ---------- portfolio copy switcher ---------- */
@@ -829,6 +1091,9 @@
     }
     renderContribChips(proj.contrib);
     renderStats(proj);
+    renderHeroExperience(proj);
+    renderBiome();
+    renderConstellation();
     stackedArea($("#proj-chart"), proj);
     renderBalanceSheet();
 
@@ -869,6 +1134,19 @@
         document.querySelectorAll(".tax-toggle").forEach(o => o.checked = ui.taxOn);
         renderAll();
       }));
+    $("#ledger-sort").addEventListener("change", e => {
+      ui.ledgerSort = e.target.value;
+      renderAll();
+    });
+    $("#ledger-sort-dir").addEventListener("click", e => {
+      ui.ledgerSortDir = ui.ledgerSortDir === "asc" ? "desc" : "asc";
+      e.currentTarget.textContent = ui.ledgerSortDir === "asc" ? "A-Z" : "Z-A";
+      renderAll();
+    });
+    $("#ledger-by-institution").addEventListener("change", e => {
+      ui.ledgerByInstitution = e.target.checked;
+      renderAll();
+    });
   }
 
   /* ---------- add form ---------- */
