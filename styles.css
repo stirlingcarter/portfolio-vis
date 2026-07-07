@@ -557,10 +557,10 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .biome-panel { min-height: 520px; }
 .biome-view {
   position: relative; min-height: 480px; display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 20px; align-items: end; padding: 26px 12px 8px; perspective: 1200px;
+  gap: 20px; align-items: end; padding: 26px 12px 8px; perspective: 1200px; isolation: isolate;
 }
 .biome-view::before {
-  content: ""; position: absolute; inset: auto 0 0; height: 48%;
+  content: ""; position: absolute; inset: auto 0 0; z-index: 0; height: 48%;
   background:
     radial-gradient(80% 50% at 50% 90%, rgba(120,255,214,.13), transparent 70%),
     linear-gradient(180deg, transparent, rgba(120,255,214,.05));
@@ -570,6 +570,7 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .entity-card {
   position: relative; z-index: 1; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: end;
   padding: 14px 8px; border-radius: 24px; transform-style: preserve-3d;
+  isolation: isolate;
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.014));
   border: 1px solid rgba(255,255,255,.08); transition: border-color .22s ease, background .22s ease, box-shadow .22s ease;
 }
@@ -584,6 +585,7 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   outline-offset: 4px;
 }
 .entity-card-lift {
+  position: relative; z-index: 1;
   width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: end;
   transform-style: preserve-3d;
   transition: transform .22s ease, filter .22s ease;
@@ -598,15 +600,21 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   filter: brightness(1.08) saturate(1.08);
 }
 .entity-ground {
+  position: relative; z-index: 1;
   width: 90%; height: 18px; border-radius: 50%; margin-top: 10px;
   background: radial-gradient(ellipse, color-mix(in srgb, var(--entity-color) 42%, transparent), transparent 72%);
   filter: blur(3px);
+  transform: translateZ(2px);
 }
 .entity {
   --h: 140px;
+  z-index: 3;
   position: relative; width: 90px; height: var(--h); transform-style: preserve-3d;
+  transform: translateZ(34px);
+  backface-visibility: hidden;
   filter: drop-shadow(0 22px 24px rgba(0,0,0,.34));
 }
+.entity > * { backface-visibility: hidden; }
 .entity.plant .stem {
   position: absolute; left: 50%; bottom: 7px; width: 12px; height: calc(var(--h) * .66);
   translate: -50% 0; border-radius: 999px;
@@ -650,7 +658,9 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
   box-shadow: inset -18px -24px 30px rgba(0,0,0,.42), 0 0 26px rgba(255,135,118,.22);
 }
 .entity-label {
+  position: relative; z-index: 4;
   width: 100%; margin-top: 12px; text-align: center; font-family: var(--mono);
+  transform: translateZ(18px);
 }
 .entity-label b { display: block; font-size: .86rem; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entity-label span { display: block; color: var(--faint); font-size: .62rem; text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
@@ -665,8 +675,14 @@ tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
 .const-account {
   fill: rgba(185,148,255,.12); stroke: rgba(185,148,255,.38); stroke-width: 1;
 }
-.const-node { cursor: pointer; stroke: rgba(255,255,255,.56); stroke-width: 1; }
-.const-node:hover { stroke-width: 2.4; }
+.const-node {
+  cursor: pointer; stroke: rgba(255,255,255,.56); stroke-width: 1;
+  transition: stroke .16s ease, filter .16s ease;
+}
+.const-node:hover {
+  stroke: rgba(255,255,255,.92);
+  filter: brightness(1.18) drop-shadow(0 0 8px rgba(120,255,214,.28));
+}
 .const-label {
   font-family: var(--mono); font-size: 10px; fill: var(--muted); letter-spacing: .05em;
   paint-order: stroke; stroke: #05070b; stroke-width: 4px; stroke-linejoin: round;

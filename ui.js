@@ -77,6 +77,136 @@
     ledgerByInstitution: false
   };
 
+  const UI_STORAGE_KEY = "coldledger.ui.v1";
+  const RANGE_LIMITS = {
+    years: { min: 1, max: 50, step: 1, fallback: 25 },
+    monthly: { min: 0, max: 10000, step: 100, fallback: 1000 }
+  };
+
+  function rangeValue(raw, spec) {
+    let n = (raw === "" || raw == null || typeof raw === "boolean") ? NaN : Number(raw);
+    if (!Number.isFinite(n)) n = spec.fallback;
+    n = clamp(n, spec.min, spec.max);
+    if (spec.step !== "any" && Number(spec.step) > 0) {
+      const step = Number(spec.step);
+      n = spec.min + Math.round((n - spec.min) / step) * step;
+      n = clamp(n, spec.min, spec.max);
+    }
+    return Number(n.toFixed(6));
+  }
+
+  function readUiStorage() {
+    try {
+      const raw = localStorage.getItem(UI_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeUiStorage(state) {
+    try { localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(state)); } catch { /* quota / privacy mode */ }
+  }
+
+  function activePortfolioId() {
+    try { return Portfolios.activeId(); } catch { return null; }
+  }
+
+  function resetContributionState() {
+    ui.contribTouched = false;
+    ui.contribIds.clear();
+    ui.contribAmounts.clear();
+  }
+
+  function serializeContributionState() {
+    const amounts = {};
+    ui.contribAmounts.forEach((value, id) => {
+      const amount = Math.max(0, Number(value) || 0);
+      amounts[String(id)] = amount;
+    });
+    return {
+      contribTouched: ui.contribTouched,
+      contribIds: [...ui.contribIds],
+      contribAmounts: amounts
+    };
+  }
+
+  function applyContributionState(raw) {
+    resetContributionState();
+    if (!raw || typeof raw !== "object") return;
+    ui.contribTouched = raw.contribTouched === true;
+    if (Array.isArray(raw.contribIds)) {
+      raw.contribIds.forEach(id => {
+        const n = Number(id);
+        if (Number.isFinite(n)) ui.contribIds.add(n);
+      });
+    }
+    if (raw.contribAmounts && typeof raw.contribAmounts === "object") {
+      Object.entries(raw.contribAmounts).forEach(([id, value]) => {
+        const nId = Number(id);
+        const amount = Math.max(0, Number(value) || 0);
+        if (Number.isFinite(nId)) ui.contribAmounts.set(nId, amount);
+      });
+    }
+  }
+
+  function loadStoredProjectionState() {
+    const state = readUiStorage();
+    const projection = state.projection;
+    if (!projection || typeof projection !== "object") return;
+    if ("years" in projection) ui.years = rangeValue(projection.years, RANGE_LIMITS.years);
+    if ("monthly" in projection) ui.monthly = rangeValue(projection.monthly, RANGE_LIMITS.monthly);
+    if ("taxOn" in projection) ui.taxOn = projection.taxOn === true;
+  }
+
+  function loadActiveContributionState() {
+    const state = readUiStorage();
+    const activeId = activePortfolioId();
+    const byPortfolio = state.portfolios && typeof state.portfolios === "object" ? state.portfolios : {};
+    applyContributionState(activeId ? byPortfolio[activeId] : null);
+  }
+
+  function saveUiState() {
+    const state = readUiStorage();
+    const next = {
+      version: 1,
+      projection: {
+        years: rangeValue(ui.years, RANGE_LIMITS.years),
+        monthly: rangeValue(ui.monthly, RANGE_LIMITS.monthly),
+        taxOn: ui.taxOn === true
+      },
+      portfolios: state.portfolios && typeof state.portfolios === "object" ? { ...state.portfolios } : {}
+    };
+    const activeId = activePortfolioId();
+    if (activeId) next.portfolios[activeId] = serializeContributionState();
+    writeUiStorage(next);
+  }
+
+  function syncProjectionControlsToDom() {
+    const years = $("#years-slider"), monthly = $("#monthly-slider");
+    if (years) {
+      years.min = String(RANGE_LIMITS.years.min);
+      years.max = String(RANGE_LIMITS.years.max);
+      years.step = String(RANGE_LIMITS.years.step);
+      ui.years = rangeValue(ui.years, RANGE_LIMITS.years);
+      years.value = String(ui.years);
+      const out = $("#years-out");
+      if (out) out.textContent = ui.years + " yrs";
+    }
+    if (monthly) {
+      monthly.min = String(RANGE_LIMITS.monthly.min);
+      monthly.max = String(RANGE_LIMITS.monthly.max);
+      monthly.step = String(RANGE_LIMITS.monthly.step);
+      ui.monthly = rangeValue(ui.monthly, RANGE_LIMITS.monthly);
+      monthly.value = String(ui.monthly);
+      const out = $("#monthly-out");
+      if (out) out.textContent = fmt$full(ui.monthly) + "/mo";
+    }
+    document.querySelectorAll(".tax-toggle").forEach(t => { t.checked = ui.taxOn; });
+  }
+
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => {
     const n = document.createElement(tag);
@@ -885,16 +1015,28 @@
   }
 
   function wireCopies() {
-    $("#copy-select").addEventListener("change", e => Portfolios.switchTo(e.target.value));
+    $("#copy-select").addEventListener("change", e => {
+      saveUiState();
+      Portfolios.switchTo(e.target.value);
+      loadActiveContributionState();
+      syncProjectionControlsToDom();
+      renderAll();
+    });
     $("#copy-new").addEventListener("click", () => {
       const name = prompt("Name for the new portfolio", "Untitled");
       if (name === null) return;
       Portfolios.create(name);
-      ui.contribTouched = false; ui.contribIds.clear();
+      resetContributionState();
+      saveUiState();
+      renderAll();
       toast("New portfolio created");
     });
     $("#copy-dup").addEventListener("click", () => {
+      const contributionState = serializeContributionState();
       Portfolios.duplicate();
+      applyContributionState(contributionState);
+      saveUiState();
+      renderAll();
       toast(`Duplicated → "${Portfolios.activeName()}"`);
     });
     $("#copy-rename").addEventListener("click", () => {
@@ -907,7 +1049,10 @@
     $("#copy-del").addEventListener("click", () => {
       if (!confirm(`Delete "${Portfolios.activeName()}"? This can't be undone.`)) return;
       Portfolios.remove(Portfolios.activeId());
-      ui.contribTouched = false; ui.contribIds.clear();
+      loadActiveContributionState();
+      syncProjectionControlsToDom();
+      saveUiState();
+      renderAll();
       toast("Portfolio deleted");
     });
   }
@@ -967,6 +1112,7 @@
           ui.contribIds.add(inv.ID);
           ui.contribAmounts.set(inv.ID, Number(ui.contribAmounts.get(inv.ID)) || fallback);
         }
+        saveUiState();
         renderAll();
       });
 
@@ -986,6 +1132,7 @@
         ui.contribAmounts.set(inv.ID, amount);
         amount > 0 ? ui.contribIds.add(inv.ID) : ui.contribIds.delete(inv.ID);
         ui.contribTouched = true;
+        saveUiState();
         renderAll();
       };
       amtInput.addEventListener("change", commitAmount);
@@ -1094,7 +1241,7 @@
       contribAmounts: ui.contribTouched ? ui.contribAmounts : null,
       taxOn: ui.taxOn
     });
-    $("#monthly-out").textContent = (ui.contribTouched ? fmt$full(proj.contrib.total) + "/mo exact" : fmt$full(ui.monthly) + "/mo");
+    $("#monthly-out").textContent = fmt$full(ui.monthly) + "/mo";
     const controlsSummary = $("#proj-controls-summary");
     if (controlsSummary) {
       controlsSummary.textContent = `${ui.years}Y · ${ui.contribTouched ? fmt$(proj.contrib.total) + "/mo exact" : fmt$(ui.monthly) + "/mo"} · ${proj.contrib.count} target${proj.contrib.count === 1 ? "" : "s"}${ui.taxOn ? " · post-tax" : ""}`;
@@ -1128,20 +1275,26 @@
 
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider");
+    syncProjectionControlsToDom();
     years.addEventListener("input", () => {
-      ui.years = Number(years.value);
+      ui.years = rangeValue(years.value, RANGE_LIMITS.years);
+      years.value = String(ui.years);
       $("#years-out").textContent = ui.years + " yrs";
+      saveUiState();
       renderAll();
     });
     monthly.addEventListener("input", () => {
-      ui.monthly = Number(monthly.value);
+      ui.monthly = rangeValue(monthly.value, RANGE_LIMITS.monthly);
+      monthly.value = String(ui.monthly);
       $("#monthly-out").textContent = fmt$full(ui.monthly) + "/mo";
+      saveUiState();
       renderAll();
     });
     document.querySelectorAll(".tax-toggle").forEach(t =>
       t.addEventListener("change", () => {
         ui.taxOn = t.checked;
         document.querySelectorAll(".tax-toggle").forEach(o => o.checked = ui.taxOn);
+        saveUiState();
         renderAll();
       }));
     $("#ledger-sort").addEventListener("change", e => {
@@ -1284,7 +1437,9 @@
       if (!file) return;
       try {
         Data.loadText(await file.text());
-        ui.contribTouched = false; ui.contribIds.clear();
+        resetContributionState();
+        saveUiState();
+        renderAll();
         toast(`Imported ${Data.all().length} positions`);
       } catch (err) { toast("Couldn't read that backup: " + err.message); }
       fileInput.value = "";
@@ -1332,13 +1487,16 @@
         { "ID": 7, "Ticker": "BTC", "Institution": "Robinhood", "Account Type": "Wallet",    "Kind": "Asset", "Amount": 0.5, "Value": 30750, "Category": "Crypto", "Subcategory": "",              "Nominal Rate": 0.12, "Nominal tax rate": 0.15 },
         { "ID": 8, "Ticker": "ETH", "Institution": "Coinbase",  "Account Type": "Wallet",    "Kind": "Asset", "Amount": 5,   "Value": 8550,  "Category": "Crypto", "Subcategory": "",              "Nominal Rate": 0.12, "Nominal tax rate": 0.15 }
       ]);
-      ui.contribTouched = false; ui.contribIds.clear();
+      resetContributionState();
+      saveUiState();
+      renderAll();
       toast("Sample portfolio loaded");
     });
   }
 
   /* ---------- boot ---------- */
 
+  loadStoredProjectionState();
   wireControls();
   wireForm();
   wireIO();
@@ -1348,6 +1506,8 @@
   // "Default" from tickers.json only on first run), then we subscribe the
   // renderer so it draws once against restored state.
   Portfolios.init().then(() => {
+    loadActiveContributionState();
+    syncProjectionControlsToDom();
     Data.subscribe(renderAll);
     Data.subscribe(pulseSaved);   // subscribed after init, so boot's initial load doesn't pulse
     renderAll();
