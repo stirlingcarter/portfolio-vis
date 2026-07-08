@@ -62,6 +62,8 @@ assert.match(uiSource, /ledgerGroupBy:\s*"Institution"/, "institution is the no-
 assert.match(uiSource, /const LEDGER_GROUP_DIMS = Data\.TAG_DIMENSIONS\.slice\(\);/, "ledger grouping follows tag dimensions");
 assert.match(uiSource, /Assets \$\{fmt\$full\(assets\)\} · Debts \$\{fmt\$full\(debts\)\} · Net \$\{fmt\$full\(net\)\}/, "ledger summaries show assets, debts, and net");
 assert.match(uiSource, /ledgerGroupBlock\("All positions", rows\)/, "ungrouped ledger keeps the same summary shape");
+assert.match(uiSource, /inst\.netValue \+= isDebt \? -value : value;/, "Holdings institution net subtracts debt values");
+assert.match(uiSource, /institution-pen-meta", `\$\{fmt\$\(inst\.netValue\)\} net/, "Holdings institution readout labels net value");
 assert.doesNotMatch(uiSource, /ledger-sort-dir|ledgerSortDir/, "ledger sort direction button and state are removed");
 assert.ok(
   indexSource.indexOf('<option value="Institution">Institution</option>') <

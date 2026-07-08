@@ -1375,7 +1375,7 @@
     groups.forEach(inst => {
       const penLayout = institutionPenLayoutFor(inst, max);
       const pen = el("section", `institution-pen is-${penLayout.kind}`);
-      pen.setAttribute("aria-label", `${inst.name} pen, ${fmt$full(inst.value)}, ${inst.count} position${inst.count === 1 ? "" : "s"}`);
+      pen.setAttribute("aria-label", `${inst.name} pen, net ${fmt$full(inst.netValue)}, ${inst.count} position${inst.count === 1 ? "" : "s"}`);
       pen.style.setProperty("--pen-span", String(penLayout.span));
       pen.style.setProperty("--pen-min-height", penLayout.minHeight + "px");
       pen.style.setProperty("--pen-card-min-height", penLayout.cardMinHeight + "px");
@@ -1385,7 +1385,7 @@
       const title = el("h3", "institution-pen-title", inst.name);
       title.title = inst.name;
       head.appendChild(title);
-      head.appendChild(el("span", "institution-pen-meta", `${fmt$(inst.value)} · ${inst.count} pos`));
+      head.appendChild(el("span", "institution-pen-meta", `${fmt$(inst.netValue)} net · ${inst.count} pos`));
       pen.appendChild(head);
       const yard = el("div", "institution-pen-yard");
       inst.holdings.forEach((inv, holdingIdx) => {
@@ -1433,16 +1433,22 @@
       const acctName = cleanTag(inv["Account Type"]);
       const value = invMagnitude(inv);
       if (!groups.has(instName)) {
-        groups.set(instName, { name: instName, value: 0, debtValue: 0, count: 0, accounts: new Map(), holdings: [] });
+        groups.set(instName, { name: instName, value: 0, assetValue: 0, debtValue: 0, netValue: 0, count: 0, accounts: new Map(), holdings: [] });
       }
       const inst = groups.get(instName);
-      if (!inst.accounts.has(acctName)) inst.accounts.set(acctName, { name: acctName, value: 0, count: 0 });
+      if (!inst.accounts.has(acctName)) inst.accounts.set(acctName, { name: acctName, value: 0, assetValue: 0, debtValue: 0, netValue: 0, count: 0 });
       const acct = inst.accounts.get(acctName);
+      const isDebt = inv.Kind === "Debt";
       inst.value += value;
-      inst.debtValue += inv.Kind === "Debt" ? value : 0;
+      inst.assetValue += isDebt ? 0 : value;
+      inst.debtValue += isDebt ? value : 0;
+      inst.netValue += isDebt ? -value : value;
       inst.count += 1;
       inst.holdings.push(inv);
       acct.value += value;
+      acct.assetValue += isDebt ? 0 : value;
+      acct.debtValue += isDebt ? value : 0;
+      acct.netValue += isDebt ? -value : value;
       acct.count += 1;
     });
 
@@ -2748,6 +2754,8 @@
   }
   const historyRangeSpec = () => Prices.HISTORY_RANGES.find(r => r.key === coerceHistoryRange(ui.historyRange));
   const historyCacheKey = (sym, rangeKey) => `${sym}|${rangeKey}`;
+  // The hero history intentionally tracks market-priced asset holdings only.
+  // Net worth appears in the hero/balance sheet/projection, where debts subtract.
   const isHistoryHolding = inv => Data.isAsset(inv) && shouldAutoPrice(inv);
 
   function readHistoryStorage() {
@@ -2925,7 +2933,7 @@
 
     const svg = svgEl("svg", {
       viewBox: `0 0 ${W} ${H}`, class: "chart-svg history-chart-svg", role: "img",
-      "aria-label": `Holdings value over the past ${spec.label}`
+      "aria-label": `Auto-priced asset holdings value over the past ${spec.label}`
     });
     const gradientId = "history-plot-bottom-fade";
     const maskId = "history-plot-mask";
@@ -3010,7 +3018,7 @@
       const pct = values[0] ? delta / values[0] : 0;
       showTip(
         `<b>${fmtHistoryTime(times[i], spec, true)}</b><br>` +
-        `<span class="tt-k">holdings</span> ${fmt$full(values[i])}<br>` +
+        `<span class="tt-k">asset holdings</span> ${fmt$full(values[i])}<br>` +
         `<span class="tt-k">vs start</span> ${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`,
         e.clientX, e.clientY);
     });

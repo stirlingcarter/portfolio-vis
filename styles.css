@@ -156,7 +156,7 @@ html[data-theme="pink"] {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { background: var(--canvas); scroll-behavior: smooth; color-scheme: dark; }
+html { background: var(--canvas); scroll-behavior: smooth; color-scheme: dark; overflow-x: hidden; }
 html[data-theme="white"], html[data-theme="sand"], html[data-theme="pink"] { color-scheme: light; }
 
 body {
@@ -171,10 +171,12 @@ body {
   min-height: 100vh;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
 }
 
-.wrap { position: relative; z-index: 1; max-width: 1260px; margin: 0 auto; padding: 0 30px 100px; }
+.wrap { position: relative; z-index: 1; width: 100%; max-width: 1260px; margin: 0 auto; padding: 0 30px 100px; }
 
 /* ---------- header ---------- */
 
@@ -954,6 +956,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 #proj-chart {
+  max-width: 100%;
   overflow-x: auto;
   padding-bottom: 6px;
   overscroll-behavior-x: contain;
@@ -1055,6 +1058,7 @@ input[type="range"]::-moz-range-thumb {
   position: relative;
   z-index: 0;
   width: min(100%, 1080px);
+  max-width: 100%;
   justify-self: center;
   margin-top: clamp(-12px, -1.3vw, -4px);
   margin-bottom: clamp(-6px, -1vw, 0px);
@@ -1119,6 +1123,7 @@ input[type="range"]::-moz-range-thumb {
 .history-chart {
   position: relative;
   z-index: 1;
+  max-width: 100%;
   margin-inline: clamp(-18px, -2vw, -8px);
   margin-bottom: 0;
   overflow: visible;
@@ -1126,6 +1131,7 @@ input[type="range"]::-moz-range-thumb {
 .history-chart-svg {
   position: relative;
   z-index: 1;
+  width: 100%;
   min-width: 0;
   opacity: .76;
   transform: none;
@@ -1381,7 +1387,11 @@ input[type="range"]::-moz-range-thumb {
 
 /* ---------- ledger table + form ---------- */
 
-.table-scroll { overflow-x: auto; }
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
 table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: .76rem; }
 th {
   text-align: left; font-weight: 500; font-size: .63rem; letter-spacing: .12em;
@@ -1477,8 +1487,8 @@ tr.editing input[type="number"] { min-width: 66px; }
 .ledger-group-field select { min-width: 180px; }
 .ledger-sort-field { width: min(240px, 100%); }
 .ledger-sort-field select { min-width: 180px; }
-.ledger-table-wrap { display: flex; flex-direction: column; gap: 18px; }
-.ledger-group { display: flex; flex-direction: column; gap: 8px; }
+.ledger-table-wrap { display: flex; flex-direction: column; gap: 18px; min-width: 0; max-width: 100%; }
+.ledger-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 100%; }
 .ledger-group-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   font-family: var(--mono);
@@ -1597,6 +1607,8 @@ tr.editing .mini-btn { min-width: 26px; min-height: 28px; padding: 0 8px; font-s
   display: flex;
   align-items: baseline;
   justify-content: center;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: clamp(14px, 3vw, 28px);
   margin-top: -4px;
   font-family: var(--mono);
@@ -2330,6 +2342,10 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .biome-view.is-pens { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 }
 @media (max-width: 540px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
   .wrap { padding: 0 16px 60px; }
   header { align-items: stretch; padding-top: 18px; gap: 10px; }
   header > div:first-child { width: 100%; min-width: 0; }
@@ -2393,9 +2409,10 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .donut-body { flex-direction: column; align-items: flex-start; }
   .donut-body svg { align-self: center; }
   .hero-stage { min-height: clamp(390px, 60svh, 540px); gap: 12px; margin-top: 28px; }
-  .hero-amount { font-size: min(3.1rem, 13vw); letter-spacing: -.045em; }
+  .hero-amount { font-size: min(3.1rem, 13vw); letter-spacing: -.045em; overflow-wrap: anywhere; }
   .hero-history {
-    width: calc(100% + 18px);
+    width: 100%;
+    max-width: 100%;
     margin-top: -4px;
     opacity: .78;
   }
@@ -2404,7 +2421,12 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .history-readout .history-delta { font-size: .66rem; }
   .history-readout .history-asof { display: none; }
   .history-chart {
-    margin-inline: -10px;
+    margin-inline: 0;
+    overflow: hidden;
+  }
+  .history-chart .chart-svg {
+    min-width: 0;
+    max-width: 100%;
   }
   .hero-history-controls {
     margin-top: 14px;

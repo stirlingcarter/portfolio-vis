@@ -681,13 +681,15 @@ const Data = (() => {
   }
 
   /* ---------- holdings history ----------
-     Portfolio value over time from per-ticker price histories.
+     Portfolio value/net over time from per-ticker price histories.
      seriesByTicker: Map<TICKER, [[msTimestamp, price]…]>, points sorted asc.
      Holdings passing `filter` whose ticker has a series are valued on a shared
      time grid as shares × price(t) — step interpolation (last price at or
      before t), flat-extended at the edges so every ticker answers at every
-     grid time. Returns { times, values, included, excluded }; excluded lists
-     holdings that passed the filter but have no usable price series.
+     grid time. Debts subtract when included; asset-only filters still return
+     positive asset value. Returns { times, values, included, excluded };
+     excluded lists holdings that passed the filter but have no usable price
+     series.
   ------------------------------------ */
   function historyPriceAt(points, t) {
     if (t <= points[0][0]) return points[0][1];
@@ -708,8 +710,9 @@ const Data = (() => {
       if (filter && !filter(inv)) return;
       const sym = String(inv.Ticker || "").trim().toUpperCase();
       if (!usable(seriesByTicker.get(sym))) { excluded.push(inv); return; }
-      const mult = taxOn ? (1 - taxRate(inv)) : 1;
-      shares.set(sym, (shares.get(sym) || 0) + (Number(inv.Amount) || 0) * mult);
+      const taxMult = taxOn ? (1 - taxRate(inv)) : 1;
+      const sign = inv["Kind"] === "Debt" ? -1 : 1;
+      shares.set(sym, (shares.get(sym) || 0) + (Number(inv.Amount) || 0) * taxMult * sign);
       included.push(inv);
     });
     const n = Math.max(2, Math.round(count) || 0);

@@ -18,6 +18,9 @@ assert.match(indexSource, /id="history-ranges"/, "range selector container exist
 assert.match(uiSource, /renderHistorySection\(\);/, "renderAll draws the history section");
 assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own storage key");
 assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
+assert.match(indexSource, /Auto-priced asset holdings value history/, "history section is labeled as asset holdings value");
+assert.match(indexSource, /auto-priced asset holdings · current shares × past prices/, "history note is explicitly assets-only");
+assert.match(uiSource, /asset holdings<\/span> \$\{fmt\$full\(values\[i\]\)\}/, "history tooltip is explicitly assets-only");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
 assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padBottom: 34[\s\S]*?\}\);/, "history chart geometry is centralized");
 assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");
@@ -149,12 +152,16 @@ Data.loadArray([
   { "ID": 2, "Ticker": "QQQ", "Institution": "RH", "Account Type": "Roth IRA", "Kind": "Asset", "Amount": 1, "Value": 500, "Category": "Stock", "Subcategory": "", "Nominal Rate": 0.08, "Nominal tax rate": 0 },
   { "ID": 3, "Ticker": "USD", "Institution": "Chase", "Account Type": "Checking", "Kind": "Asset", "Amount": 100, "Value": 100, "Category": "Cash", "Subcategory": "", "Nominal Rate": 0, "Nominal tax rate": "" },
   { "ID": 4, "Ticker": "MYSTERY", "Institution": "RH", "Account Type": "Brokerage", "Kind": "Asset", "Amount": 1, "Value": 42, "Category": "Stock", "Subcategory": "", "Nominal Rate": 0.08, "Nominal tax rate": "" },
-  { "ID": 5, "Ticker": "LOAN", "Institution": "Bank", "Account Type": "Loan", "Kind": "Debt", "Amount": 1, "Value": 999, "Category": "Loan", "Subcategory": "", "Nominal Rate": 0, "Nominal tax rate": "" }
+  { "ID": 5, "Ticker": "LOAN", "Institution": "Bank", "Account Type": "Loan", "Kind": "Debt", "Amount": 40, "Value": 40, "Category": "Loan", "Subcategory": "", "Nominal Rate": 0, "Nominal tax rate": "" }
 ]);
+assert.equal(Data.assetTotal(false), 1642, "current asset total remains positive magnitude");
+assert.equal(Data.debtTotal(false), 40, "current debt total remains positive magnitude");
+assert.equal(Data.total(false), 1602, "current net worth subtracts debt");
 
 const seriesByTicker = new Map([
   ["QQQ", [[T0, 100], [T0 + 2 * HOUR, 120]]],
-  ["USD", [[T0, 1], [T0 + 2 * HOUR, 1]]]
+  ["USD", [[T0, 1], [T0 + 2 * HOUR, 1]]],
+  ["LOAN", [[T0, 1], [T0 + 2 * HOUR, 1]]]
 ]);
 const isAssetWithSeriesOrUsd = inv => Data.isAsset(inv);
 
@@ -177,6 +184,12 @@ const flat = Data.historyValueSeries(seriesByTicker, {
   start: T0 - 4 * HOUR, end: T0 - 3 * HOUR, points: 2, taxOn: false, filter: isAssetWithSeriesOrUsd
 });
 assert.deepEqual(plain(flat.values), [400, 400], "times before the first print flat-extend the earliest price");
+
+const netHistory = Data.historyValueSeries(seriesByTicker, {
+  start: T0, end: T0 + 2 * HOUR, points: 3, taxOn: false, filter: () => true
+});
+assert.deepEqual(plain(netHistory.values), [360, 360, 420], "net history subtracts debt holdings when debts are included");
+assert.deepEqual(plain(netHistory.excluded.map(i => i.Ticker)), ["MYSTERY"], "net history still excludes holdings without a series");
 
 historySmoke()
   .then(() => console.log("ok - holdings history ranges, price parsing, and value series"))
