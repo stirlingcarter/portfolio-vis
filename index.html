@@ -208,6 +208,16 @@ try {
       <h1 id="hero-title" class="hero-amount-title"></h1>
       <div id="hero-derived" class="hero-derived"></div>
       <div class="hero-price-status live-price-status" data-live-price-status role="status" aria-live="polite">Not updated yet</div>
+      <!-- Robinhood-style look-back, visually integrated with the hero. -->
+      <section id="history-section" class="hero-history" style="display:none;" aria-label="Holdings value history">
+        <div id="history-readout" class="history-readout"></div>
+        <div id="history-chart" class="history-chart"></div>
+        <div class="hero-history-controls">
+          <span class="section-note" id="history-note">auto-priced holdings · current shares × past prices</span>
+          <div class="history-ranges" id="history-ranges" role="group" aria-label="History look-back range"></div>
+        </div>
+        <div id="history-status" class="history-status" role="status" aria-live="polite"></div>
+      </section>
     </section>
 
     <!-- ===== balance sheet: assets, debts, net worth ===== -->
@@ -217,22 +227,6 @@ try {
         <span class="section-note"></span>
       </div>
       <div class="panel" id="balance-sheet"></div>
-    </section>
-
-    <!-- ===== holdings history (Robinhood-style look-back) ===== -->
-    <section id="history-section" style="display:none;">
-      <div class="section-head">
-        <h2>Holdings history</h2>
-        <div class="head-right history-head-controls">
-          <span class="section-note" id="history-note">auto-priced holdings · current shares × past prices</span>
-          <div class="history-ranges" id="history-ranges" role="group" aria-label="History look-back range"></div>
-        </div>
-      </div>
-      <div class="panel">
-        <div id="history-readout" class="history-readout"></div>
-        <div id="history-chart" class="history-chart"></div>
-        <div id="history-status" class="history-status" role="status" aria-live="polite"></div>
-      </div>
     </section>
 
     <!-- ===== projection ===== -->
