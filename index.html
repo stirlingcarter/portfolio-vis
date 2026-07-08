@@ -64,7 +64,13 @@ try {
           </svg>
         </button>
         <button id="ops-menu-toggle" class="menu-toggle" type="button" aria-controls="settings-view" aria-expanded="false" aria-label="Open portfolio settings" title="Open portfolio settings">
-          <span class="menu-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+          <svg class="portfolio-clipboard-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 6.5V5.3c0-1 .8-1.8 1.8-1.8h2.4c1 0 1.8.8 1.8 1.8v1.2"/>
+            <path d="M8.1 6.5h7.8"/>
+            <path d="M8 6.5H6.8c-1.2 0-2.1.9-2.1 2.1v9.3c0 1.2.9 2.1 2.1 2.1h10.4c1.2 0 2.1-.9 2.1-2.1V8.6c0-1.2-.9-2.1-2.1-2.1H16"/>
+            <path d="M8.4 11.4h7.2"/>
+            <path d="M8.4 15.2h5.5"/>
+          </svg>
         </button>
       </div>
     </div>
@@ -84,102 +90,86 @@ try {
           </div>
           <div class="settings-price-status live-price-status" data-live-price-status role="status" aria-live="polite">Not updated yet</div>
         </div>
+        <div class="ledger-tabs-shell" aria-label="Ledgers">
+          <div id="ledger-tabs" class="ledger-tabs" role="tablist" aria-label="Ledger tabs"></div>
+        </div>
         <div class="panel settings-ledger-panel">
-          <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add a position below, or use + Add ledger to start a new ledger.</div>
-          <div class="ledger-controls" id="ledger-controls">
-            <label class="field ledger-group-field">
-              <span>Group tables</span>
-              <select id="ledger-group-by" aria-label="Ledger table grouping">
-                <option value="Institution">Institution</option>
-                <option value="Account Type">Account type</option>
-                <option value="Kind">Kind</option>
-                <option value="Category">Vehicle</option>
-                <option value="Subcategory">Vehicle category</option>
-                <option value="Ticker">Ticker</option>
-                <option value="__ungrouped__">Ungrouped</option>
-              </select>
-            </label>
-            <label class="field ledger-sort-field">
-              <span>Sort rows</span>
-              <select id="ledger-sort" aria-label="Ledger sort">
-                <option value="ID">ID</option>
-                <option value="Ticker">Ticker</option>
-                <option value="Institution">Institution</option>
-                <option value="Account Type">Account type</option>
-                <option value="Kind">Kind</option>
-                <option value="Category">Vehicle</option>
-                <option value="Subcategory">Vehicle category</option>
-              </select>
-            </label>
-          </div>
-          <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
-
-          <div id="add-form-panel" class="add-form settings-add-form">
-            <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
-            <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
-            <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
-            <label class="field"><span>Kind</span><select id="f-kind"><option value="Asset">Asset</option><option value="Debt">Debt</option></select></label>
-            <label class="field"><span>Amount (shares)</span><input type="number" id="f-amount" min="0" step="any" placeholder="12.5"></label>
-            <label class="field"><span>Price ($/share)</span>
-              <span class="price-field">
-                <input type="number" id="f-price" min="0" step="any" placeholder="480.20">
-                <button type="button" id="fetch-price" class="fetch-btn" title="Fetch live price for this ticker">Fetch</button>
-              </span>
-            </label>
-            <label class="field"><span>Vehicle</span><input type="text" id="f-category" list="dl-Category" placeholder="Stock"></label>
-            <label class="field"><span>Vehicle category</span><input type="text" id="f-subcategory" list="dl-Subcategory" placeholder="Growth Stocks"></label>
-            <label class="field"><span>Nominal rate</span><input type="number" id="f-rate" step="0.005" value="0.08"></label>
-            <label class="field"><span>Nominal tax rate</span>
-              <span class="tax-field">
-                <input type="number" id="f-tax" step="0.005" value="0.1">
-                <button type="button" id="f-tax-toggle" class="mini-btn" title="This position isn't taxed">−</button>
-              </span>
-            </label>
-            <label class="field amort-only" hidden><span>Debt: months left</span>
-              <span class="tax-field">
-                <input type="number" id="f-amort-months" min="0" step="1" placeholder="24 · blank = carries">
-                <button type="button" id="f-amort-months-toggle" class="mini-btn" title="Remove months left">−</button>
-              </span>
-            </label>
-            <label class="field amort-only" hidden><span>Debt: monthly payment</span>
-              <span class="tax-field">
-                <input type="number" id="f-amort-pay" min="0" step="any" placeholder="500">
-                <button type="button" id="f-amort-pay-toggle" class="mini-btn" title="Remove monthly payment">−</button>
-              </span>
-            </label>
-            <div class="form-actions">
-              <button id="add-btn" class="primary">Add position</button>
-              <span class="form-hint">Ticker or a short call-sign (HOUSE, DEBT) · Fetch tries a live price when it looks tradable · leave price blank to enter your own</span>
+          <div id="ledger-tab-panel" class="ledger-tab-panel" role="tabpanel">
+            <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add a position below, or use the (+) tab to start a new ledger.</div>
+            <div class="ledger-controls" id="ledger-controls">
+              <label class="field ledger-group-field">
+                <span>Group tables</span>
+                <select id="ledger-group-by" aria-label="Ledger table grouping">
+                  <option value="Institution">Institution</option>
+                  <option value="Account Type">Account type</option>
+                  <option value="Kind">Kind</option>
+                  <option value="Category">Vehicle</option>
+                  <option value="Subcategory">Vehicle category</option>
+                  <option value="Ticker">Ticker</option>
+                  <option value="__ungrouped__">Ungrouped</option>
+                </select>
+              </label>
+              <label class="field ledger-sort-field">
+                <span>Sort rows</span>
+                <select id="ledger-sort" aria-label="Ledger sort">
+                  <option value="ID">ID</option>
+                  <option value="Ticker">Ticker</option>
+                  <option value="Institution">Institution</option>
+                  <option value="Account Type">Account type</option>
+                  <option value="Kind">Kind</option>
+                  <option value="Category">Vehicle</option>
+                  <option value="Subcategory">Vehicle category</option>
+                </select>
+              </label>
             </div>
-          </div>
+            <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
 
-          <datalist id="dl-Institution"></datalist>
-          <datalist id="dl-Account-Type"></datalist>
-          <datalist id="dl-Category"></datalist>
-          <datalist id="dl-Subcategory"></datalist>
+            <div id="add-form-panel" class="add-form settings-add-form">
+              <label class="field"><span>Ticker / call-sign</span><input type="text" id="f-ticker" placeholder="QQQ · or HOUSE, MORT" autocomplete="off" maxlength="7"></label>
+              <label class="field"><span>Institution</span><input type="text" id="f-institution" list="dl-Institution" placeholder="Robinhood"></label>
+              <label class="field"><span>Account type</span><input type="text" id="f-account" list="dl-Account-Type" placeholder="Roth IRA"></label>
+              <label class="field"><span>Kind</span><select id="f-kind"><option value="Asset">Asset</option><option value="Debt">Debt</option></select></label>
+              <label class="field"><span>Amount (shares)</span><input type="number" id="f-amount" min="0" step="any" placeholder="12.5"></label>
+              <label class="field"><span>Price ($/share)</span>
+                <span class="price-field">
+                  <input type="number" id="f-price" min="0" step="any" placeholder="480.20">
+                  <button type="button" id="fetch-price" class="fetch-btn" title="Fetch live price for this ticker">Fetch</button>
+                </span>
+              </label>
+              <label class="field"><span>Vehicle</span><input type="text" id="f-category" list="dl-Category" placeholder="Stock"></label>
+              <label class="field"><span>Vehicle category</span><input type="text" id="f-subcategory" list="dl-Subcategory" placeholder="Growth Stocks"></label>
+              <label class="field"><span>Nominal rate</span><input type="number" id="f-rate" step="0.005" value="0.08"></label>
+              <label class="field"><span>Nominal tax rate</span>
+                <span class="tax-field">
+                  <input type="number" id="f-tax" step="0.005" value="0.1">
+                  <button type="button" id="f-tax-toggle" class="mini-btn" title="This position isn't taxed">−</button>
+                </span>
+              </label>
+              <label class="field amort-only" hidden><span>Debt: months left</span>
+                <span class="tax-field">
+                  <input type="number" id="f-amort-months" min="0" step="1" placeholder="24 · blank = carries">
+                  <button type="button" id="f-amort-months-toggle" class="mini-btn" title="Remove months left">−</button>
+                </span>
+              </label>
+              <label class="field amort-only" hidden><span>Debt: monthly payment</span>
+                <span class="tax-field">
+                  <input type="number" id="f-amort-pay" min="0" step="any" placeholder="500">
+                  <button type="button" id="f-amort-pay-toggle" class="mini-btn" title="Remove monthly payment">−</button>
+                </span>
+              </label>
+              <div class="form-actions">
+                <button id="add-btn" class="primary">Add position</button>
+                <span class="form-hint">Ticker or a short call-sign (HOUSE, DEBT) · Fetch tries a live price when it looks tradable · leave price blank to enter your own</span>
+              </div>
+            </div>
+
+            <datalist id="dl-Institution"></datalist>
+            <datalist id="dl-Account-Type"></datalist>
+            <datalist id="dl-Category"></datalist>
+            <datalist id="dl-Subcategory"></datalist>
+          </div>
         </div>
       </section>
-
-      <div class="settings-grid">
-        <div class="settings-block settings-copy-block">
-          <div class="copy-bar settings-copy-bar">
-            <select id="copy-select" aria-label="Active portfolio"></select>
-            <button id="copy-new" class="ledger-add-toggle" title="Start a new empty ledger">
-              <span class="add-plus" aria-hidden="true">+</span>
-              <span>Add ledger</span>
-            </button>
-            <button id="copy-dup" title="Duplicate the current portfolio">Duplicate</button>
-            <button id="copy-rename" title="Rename the current portfolio">Rename</button>
-            <button id="copy-del" class="ghost-danger" title="Delete the current portfolio">Delete</button>
-            <span id="save-dot" class="save-dot" role="status" aria-label="Saved locally" title="Saved locally in this browser">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" fill="currentColor"/>
-                <path d="M7.5 12.4l3 3 6-6.6" stroke="#0d1512" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
-          </div>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -206,29 +196,6 @@ try {
       <div class="hero-price-status live-price-status" data-live-price-status role="status" aria-live="polite">Not updated yet</div>
     </section>
 
-    <div class="stats">
-      <div class="panel stat">
-        <div class="k">Net worth</div>
-        <div class="v" id="stat-total">$0</div>
-        <div class="sub" id="stat-total-sub">assets − debts</div>
-      </div>
-      <div class="panel stat">
-        <div class="k">Positions</div>
-        <div class="v" id="stat-count">0</div>
-        <div class="sub" id="stat-count-sub"></div>
-      </div>
-      <div class="panel stat">
-        <div class="k">Weighted growth rate</div>
-        <div class="v" id="stat-rate">0%</div>
-        <div class="sub">amount-weighted · real</div>
-      </div>
-      <div class="panel stat">
-        <div class="k" id="stat-proj-k">Projected</div>
-        <div class="v" id="stat-proj">$0</div>
-        <div class="sub">with current contribution plan</div>
-      </div>
-    </div>
-
     <!-- ===== balance sheet: assets, debts, net worth ===== -->
     <section>
       <div class="section-head">
@@ -236,6 +203,22 @@ try {
         <span class="section-note"></span>
       </div>
       <div class="panel" id="balance-sheet"></div>
+    </section>
+
+    <!-- ===== holdings history (Robinhood-style look-back) ===== -->
+    <section id="history-section" style="display:none;">
+      <div class="section-head">
+        <h2>Holdings history</h2>
+        <div class="head-right history-head-controls">
+          <span class="section-note" id="history-note">auto-priced holdings · current shares × past prices</span>
+          <div class="history-ranges" id="history-ranges" role="group" aria-label="History look-back range"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div id="history-readout" class="history-readout"></div>
+        <div id="history-chart" class="history-chart"></div>
+        <div id="history-status" class="history-status" role="status" aria-live="polite"></div>
+      </div>
     </section>
 
     <!-- ===== projection ===== -->
@@ -252,10 +235,16 @@ try {
       </div>
       <div class="panel">
         <div id="proj-chart"></div>
-        <div class="proj-readout-row">
-          <div class="proj-readout" id="proj-readout"></div>
-          <aside class="amort-costs" id="amort-costs" aria-label="Scheduled amortizing debt monthly costs" hidden></aside>
-        </div>
+        <details class="proj-info-panel">
+          <summary>
+            <span>Projection readout</span>
+            <span id="proj-readout-summary">Summary</span>
+          </summary>
+          <div class="proj-readout-row">
+            <div class="proj-readout" id="proj-readout"></div>
+            <aside class="amort-costs" id="amort-costs" aria-label="Scheduled amortizing debt monthly costs" hidden></aside>
+          </div>
+        </details>
         <details class="proj-controls-panel">
           <summary>
             <span>Projection controls</span>

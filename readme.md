@@ -147,9 +147,10 @@ automatically on return. It holds many named **copies** (portfolios), one active
 - `Portfolios` owns the collection; `Data` holds the *active* copy's positions
   in memory. Switching a copy calls `Data.loadArray`; every `Data` change mirrors
   back into the active copy and writes localStorage (`Data.subscribe`).
-- The full-screen settings view opens from the hamburger button and drives
-  **New / Duplicate / Rename / Delete** plus the active-copy `<select>`.
-  Default is a single copy named "Default".
+- The full-screen settings view opens from the hamburger button and presents
+  portfolios as ledger tabs. The trailing **(+)** tab creates a new empty
+  ledger; compact **Duplicate / Rename / Delete** actions apply to the active
+  tab. Default is a single copy named "Default".
 - **First run only:** if there's no saved state, `Portfolios` seeds "Default" by
   fetching an adjacent `tickers.json` (works over HTTP; under `file://` the fetch
   is blocked and it starts empty). After that, localStorage is the source of

@@ -63,6 +63,7 @@
   const LEDGER_UNGROUPED = "__ungrouped__";
   // Table grouping follows the ledger's tag-like schema fields.
   const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
+  const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
   const fixedPriceForTicker = ticker => String(ticker || "").trim().toUpperCase() === "USD" ? 1 : null;
@@ -708,7 +709,7 @@
 
   function stackedArea(container, proj) {
     container.innerHTML = "";
-    const W = 1080, H = 440, padL = 76, padR = 24, padT = 24, padB = 40;
+    const W = 1080, H = 540, padL = 76, padR = 24, padT = 30, padB = 46;
     const iw = W - padL - padR, ih = H - padT - padB;
     const N = proj.months.length - 1;
 
@@ -775,7 +776,7 @@
         d, fill: c,
         "fill-opacity": s.contributing ? 0.5 : 0.28,          // contributing layers pop
         stroke: c, "stroke-opacity": 0.9,
-        "stroke-width": s.contributing ? 2.2 : 1.2
+        "stroke-width": s.contributing ? 2.35 : 1.3
       };
       if (s.amortized) attrs["stroke-dasharray"] = "5 4";      // amortizing debt = dashed
       svg.appendChild(svgEl("path", attrs));
@@ -834,7 +835,7 @@
 
   function aggregateLineChart(container, proj) {
     container.innerHTML = "";
-    const W = 1080, H = 420, padL = 76, padR = 34, padT = 28, padB = 44;
+    const W = 1080, H = 520, padL = 76, padR = 34, padT = 34, padB = 50;
     const iw = W - padL - padR, ih = H - padT - padB;
     const N = proj.months.length - 1;
     const allValues = proj.assets.concat(proj.debts);
@@ -1463,7 +1464,7 @@
       <tr>
         <th class="num">ID</th><th>Ticker</th><th>Institution</th><th>Account</th>
         <th>Kind</th><th>Vehicle</th><th>Vehicle Category</th>
-        <th class="num">Shares</th><th class="num">Price</th><th class="num">Value</th><th class="num">Rate</th><th class="num">Tax</th><th>Amort</th><th></th>
+        <th class="num">Shares / Amount</th><th class="num">Price</th><th class="num">Value</th><th class="num">Rate</th><th class="num">Tax</th><th>Amort</th><th></th>
       </tr>
     </thead>`;
 
@@ -1693,6 +1694,25 @@
     "Amort": "amortization"
   };
 
+  function inlineCellLabel(field, inv) {
+    return field === "Amount" && inv && inv.Kind === "Debt"
+      ? "amount"
+      : (INLINE_CELL_LABELS[field] || field);
+  }
+
+  function amountEditUpdate(inv, amount) {
+    const update = { "Amount": amount };
+    if (inv.Kind === "Debt") {
+      update["Value"] = amount;
+      return update;
+    }
+    const fixed = fixedPriceForTicker(inv.Ticker);
+    const pps = Data.pricePerShare(inv);
+    if (fixed != null) update["Value"] = amount * fixed;
+    else if (pps !== "") update["Value"] = amount * Number(pps);
+    return update;
+  }
+
   function finiteInlineNumber(input, label, opts = {}) {
     const raw = String(input.value ?? "").trim();
     if (raw === "") {
@@ -1738,7 +1758,7 @@
 
   function createLedgerInlineEditor(inv, config) {
     const field = config.field;
-    const label = INLINE_CELL_LABELS[field] || field;
+    const label = inlineCellLabel(field, inv);
     const textField = (value, attrs, read) => {
       const inputEl = createInlineInput(value, { type: "text", ...attrs });
       return {
@@ -1800,12 +1820,7 @@
       return numberField(inv.Amount, { step: "any", min: "0" }, inputEl => {
         const parsed = finiteInlineNumber(inputEl, label, { positive: true });
         if (!parsed.ok) return false;
-        const update = { "Amount": parsed.value };
-        const fixed = fixedPriceForTicker(inv.Ticker);
-        const pps = Data.pricePerShare(inv);
-        if (fixed != null) update["Value"] = parsed.value * fixed;
-        else if (pps !== "") update["Value"] = parsed.value * Number(pps);
-        Data.update(inv.ID, update);
+        Data.update(inv.ID, amountEditUpdate(inv, parsed.value));
         return true;
       });
     }
@@ -1970,7 +1985,7 @@
 
   function makeLedgerCellEditable(td, inv, config) {
     if (!td) return;
-    const label = INLINE_CELL_LABELS[config.field] || config.field;
+    const label = inlineCellLabel(config.field, inv);
     td.classList.add("ledger-editable-cell");
     td.dataset.editField = config.field;
     td.tabIndex = 0;
@@ -2202,86 +2217,262 @@
     if (controls) controls.style.display = rows.length ? "" : "none";
   }
 
-  /* ---------- portfolio copy switcher ---------- */
+  /* ---------- portfolio ledger tabs ---------- */
+
+  const ledgerTabId = id => `ledger-tab-${id}`;
+  const ledgerCountText = count => `${count} position${count === 1 ? "" : "s"}`;
+  const ledgerLimitMessage = () => `Maximum of ${MAX_LEDGER_COPIES} ledgers reached`;
+  const canCreateLedger = () => Portfolios.list().length < MAX_LEDGER_COPIES;
+
+  function switchToLedger(id) {
+    if (!id || id === Portfolios.activeId()) return;
+    saveUiState();
+    ui.editingId = null;
+    activeInlineEditor = null;
+    Portfolios.switchTo(id);
+    loadActivePortfolioUiState();
+    syncProjectionControlsToDom();
+    renderAll();
+  }
+
+  function createLedgerFromPrompt() {
+    if (!canCreateLedger()) {
+      toast(ledgerLimitMessage());
+      return;
+    }
+    const name = prompt("Name for the new ledger", "Untitled");
+    if (name === null) return;
+    saveUiState();
+    const created = Portfolios.create(name);
+    if (!created) {
+      toast(ledgerLimitMessage());
+      return;
+    }
+    resetContributionState();
+    resetFloatPositionState();
+    saveUiState();
+    renderAll();
+    toast("New ledger created");
+  }
+
+  function beginLedgerRename(tab, copy) {
+    if (!copy || !copy.active || tab.classList.contains("is-renaming")) return;
+    const label = tab.querySelector(".ledger-tab-label");
+    if (!label) return;
+    const input = el("input", "ledger-tab-rename-input");
+    input.type = "text";
+    input.value = copy.name;
+    input.maxLength = 48;
+    input.setAttribute("aria-label", "Rename current ledger");
+    input.setAttribute("autocomplete", "off");
+
+    let done = false;
+    const finish = commit => {
+      if (done) return;
+      done = true;
+      const next = input.value.trim();
+      if (commit && next && next !== copy.name) {
+        Portfolios.rename(copy.id, next);
+        toast("Renamed");
+      }
+      renderCopyBar();
+    };
+
+    input.addEventListener("click", e => e.stopPropagation());
+    input.addEventListener("keydown", e => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        finish(false);
+      }
+    });
+    input.addEventListener("blur", () => finish(true));
+
+    tab.classList.add("is-renaming");
+    label.replaceWith(input);
+    requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  }
+
+  function wireLedgerTabKeyboard(tab) {
+    tab.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        tab.click();
+        return;
+      }
+      const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')];
+      const current = tabs.indexOf(tab);
+      if (current < 0) return;
+      let next = current;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (current + 1) % tabs.length;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (current - 1 + tabs.length) % tabs.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = tabs.length - 1;
+      else return;
+      e.preventDefault();
+      tabs[next].focus();
+    });
+  }
+
+  const ledgerDuplicateIcon = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="8" y="8" width="10" height="10" rx="2"/>
+      <path d="M6 14H5.5A2.5 2.5 0 0 1 3 11.5v-6A2.5 2.5 0 0 1 5.5 3h6A2.5 2.5 0 0 1 14 5.5V6"/>
+    </svg>`;
+  const ledgerDeleteIcon = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 7h14"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+      <path d="M8 7l1-3h6l1 3"/>
+      <path d="M7 7l1 13h8l1-13"/>
+    </svg>`;
+
+  function duplicateActiveLedger() {
+    if (!canCreateLedger()) {
+      toast(ledgerLimitMessage());
+      return;
+    }
+    const contributionState = serializeContributionState();
+    const floatPositions = serializeFloatPositionState();
+    saveUiState();
+    const duplicated = Portfolios.duplicate();
+    if (!duplicated) {
+      toast(ledgerLimitMessage());
+      return;
+    }
+    applyContributionState(contributionState);
+    applyFloatPositionState({ floatPositions });
+    saveUiState();
+    renderAll();
+    toast(`Duplicated → "${Portfolios.activeName()}"`);
+  }
+
+  function deleteActiveLedger() {
+    if (!confirm(`Delete "${Portfolios.activeName()}"? This can't be undone.`)) return;
+    Portfolios.remove(Portfolios.activeId());
+    loadActivePortfolioUiState();
+    syncProjectionControlsToDom();
+    saveUiState();
+    renderAll();
+    toast("Portfolio deleted");
+  }
+
+  function ledgerTabActionButton({ id, className = "", label, title, icon, disabled, onClick }) {
+    const button = el("button", `ledger-tab-action-icon ${className}`.trim(), icon);
+    button.id = id;
+    button.type = "button";
+    button.title = title;
+    button.disabled = !!disabled;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("aria-disabled", disabled ? "true" : "false");
+    button.addEventListener("click", e => {
+      e.stopPropagation();
+      if (!disabled) onClick();
+    });
+    button.addEventListener("keydown", e => e.stopPropagation());
+    return button;
+  }
 
   function renderCopyBar() {
-    const sel = $("#copy-select");
-    if (!sel) return;
-    sel.innerHTML = "";
+    const tabs = $("#ledger-tabs");
+    if (!tabs) return;
+    tabs.innerHTML = "";
     const copies = Portfolios.list();
     const active = copies.find(c => c.active);
+    const panel = $("#ledger-tab-panel");
     const context = $("#settings-active-portfolio");
     if (context) {
       context.textContent = active
-        ? `${active.name} · ${active.count} position${active.count === 1 ? "" : "s"}`
+        ? `${active.name} · ${ledgerCountText(active.count)}`
         : "";
     }
+
     copies.forEach(c => {
-      const o = el("option");
-      o.value = c.id;
-      o.textContent = `${c.name} · ${c.count} position${c.count === 1 ? "" : "s"}`;
-      if (c.active) o.selected = true;
-      sel.appendChild(o);
-    });
-    $("#copy-del").disabled = copies.length <= 1 && Data.all().length === 0;
-  }
+      const tab = el("div", `ledger-tab${c.active ? " is-active" : ""}`);
+      tab.id = ledgerTabId(c.id);
+      tab.dataset.copyId = c.id;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", c.active ? "true" : "false");
+      tab.setAttribute("aria-controls", "ledger-tab-panel");
+      tab.tabIndex = c.active ? 0 : -1;
+      tab.title = c.active
+        ? `${c.name} · ${ledgerCountText(c.count)} · click title to rename`
+        : `${c.name} · ${ledgerCountText(c.count)}`;
+      tab.addEventListener("click", () => {
+        if (!c.active) switchToLedger(c.id);
+      });
+      wireLedgerTabKeyboard(tab);
 
-  // Flash the "saved" badge dark for a beat, then let CSS ease it back to bright
-  // — a quiet confirmation that the edit was persisted.
-  let saveTimer;
-  function pulseSaved() {
-    const dot = $("#save-dot");
-    if (!dot) return;
-    clearTimeout(saveTimer);
-    dot.classList.add("saving");     // snaps dark (transition:none)
-    // hold the dark briefly, then remove so CSS eases it back to bright green
-    saveTimer = setTimeout(() => dot.classList.remove("saving"), 110);
-  }
+      const tabContent = el("span", "ledger-tab-main");
+      const label = el("span", "ledger-tab-label");
+      label.textContent = c.name;
+      if (c.active) {
+        label.classList.add("is-rename-target");
+        label.title = "Click to rename this ledger";
+        label.addEventListener("click", e => {
+          e.stopPropagation();
+          beginLedgerRename(tab, c);
+        });
+      }
+      const meta = el("span", "ledger-tab-meta");
+      meta.textContent = ledgerCountText(c.count);
+      tabContent.appendChild(label);
+      tabContent.appendChild(meta);
+      tab.appendChild(tabContent);
+      if (c.active) {
+        const maxed = copies.length >= MAX_LEDGER_COPIES;
+        const deleteDisabled = copies.length <= 1 && Data.all().length === 0;
+        const actions = el("span", "ledger-tab-actions");
+        actions.setAttribute("role", "group");
+        actions.setAttribute("aria-label", "Active ledger actions");
+        actions.appendChild(ledgerTabActionButton({
+          id: "copy-dup",
+          label: maxed ? ledgerLimitMessage() : `Duplicate "${c.name}" ledger`,
+          title: maxed ? ledgerLimitMessage() : "Duplicate this ledger",
+          icon: ledgerDuplicateIcon,
+          disabled: maxed,
+          onClick: duplicateActiveLedger
+        }));
+        actions.appendChild(ledgerTabActionButton({
+          id: "copy-del",
+          className: "ledger-tab-delete ghost-danger",
+          label: deleteDisabled ? "Cannot delete the only empty ledger" : `Delete "${c.name}" ledger`,
+          title: deleteDisabled ? "Cannot delete the only empty ledger" : "Delete this ledger",
+          icon: ledgerDeleteIcon,
+          disabled: deleteDisabled,
+          onClick: deleteActiveLedger
+        }));
+        tab.appendChild(actions);
+      }
+      tabs.appendChild(tab);
+    });
 
-  function wireCopies() {
-    $("#copy-select").addEventListener("change", e => {
-      saveUiState();
-      Portfolios.switchTo(e.target.value);
-      loadActivePortfolioUiState();
-      syncProjectionControlsToDom();
-      renderAll();
+    const canAdd = copies.length < MAX_LEDGER_COPIES;
+    const add = el("div", `ledger-tab ledger-tab-add${canAdd ? "" : " is-disabled"}`);
+    add.id = "ledger-tab-add";
+    add.setAttribute("role", "tab");
+    add.setAttribute("aria-selected", "false");
+    add.setAttribute("aria-controls", "ledger-tab-panel");
+    add.setAttribute("aria-label", canAdd ? "Create a new ledger" : ledgerLimitMessage());
+    add.setAttribute("aria-disabled", canAdd ? "false" : "true");
+    add.title = canAdd ? "Create a new ledger" : ledgerLimitMessage();
+    add.tabIndex = active || !canAdd ? -1 : 0;
+    add.innerHTML = `<span aria-hidden="true">(+)</span><span class="ledger-tab-meta">${canAdd ? "New ledger" : "Max 8 ledgers"}</span>`;
+    add.addEventListener("click", () => {
+      if (canAdd) createLedgerFromPrompt();
+      else toast(ledgerLimitMessage());
     });
-    $("#copy-new").addEventListener("click", () => {
-      const name = prompt("Name for the new ledger", "Untitled");
-      if (name === null) return;
-      Portfolios.create(name);
-      resetContributionState();
-      resetFloatPositionState();
-      saveUiState();
-      renderAll();
-      toast("New ledger created");
-    });
-    $("#copy-dup").addEventListener("click", () => {
-      const contributionState = serializeContributionState();
-      const floatPositions = serializeFloatPositionState();
-      Portfolios.duplicate();
-      applyContributionState(contributionState);
-      applyFloatPositionState({ floatPositions });
-      saveUiState();
-      renderAll();
-      toast(`Duplicated → "${Portfolios.activeName()}"`);
-    });
-    $("#copy-rename").addEventListener("click", () => {
-      const name = prompt("Rename portfolio", Portfolios.activeName());
-      if (name === null || !name.trim()) return;
-      Portfolios.rename(Portfolios.activeId(), name);
-      renderCopyBar();
-      toast("Renamed");
-    });
-    $("#copy-del").addEventListener("click", () => {
-      if (!confirm(`Delete "${Portfolios.activeName()}"? This can't be undone.`)) return;
-      Portfolios.remove(Portfolios.activeId());
-      loadActivePortfolioUiState();
-      syncProjectionControlsToDom();
-      saveUiState();
-      renderAll();
-      toast("Portfolio deleted");
-    });
+    if (canAdd) wireLedgerTabKeyboard(add);
+    tabs.appendChild(add);
+
+    if (panel && active) panel.setAttribute("aria-labelledby", ledgerTabId(active.id));
   }
 
   /* ---------- contribution target chips ---------- */
@@ -2416,38 +2607,52 @@
   /* ---------- stats + projection readout ---------- */
 
   function renderStats(proj, aggregateProj) {
+    const statTotal = $("#stat-total");
+    const statTotalSub = $("#stat-total-sub");
+    const statCount = $("#stat-count");
+    const statCountSub = $("#stat-count-sub");
+    const statRate = $("#stat-rate");
+    const statProj = $("#stat-proj");
+    const statProjK = $("#stat-proj-k");
+    if (!statTotal || !statTotalSub || !statCount || !statCountSub || !statRate || !statProj || !statProjK) return;
+
     const invs = Data.all();
     const assets = Data.assetTotal(ui.taxOn), debts = Data.debtTotal(ui.taxOn);
     const projected = ui.projectionView === "simple" && aggregateProj
       ? aggregateProj.assets[aggregateProj.assets.length - 1] - aggregateProj.debts[aggregateProj.debts.length - 1]
       : proj.totals[proj.totals.length - 1];
-    $("#stat-total").textContent = fmt$full(Data.total(ui.taxOn));
-    $("#stat-total-sub").textContent = debts > 0
+    statTotal.textContent = fmt$full(Data.total(ui.taxOn));
+    statTotalSub.textContent = debts > 0
       ? `${fmt$(assets)} assets − ${fmt$(debts)} debts`
       : (ui.taxOn ? "after nominal withdrawal tax" : "pre-tax basis");
-    $("#stat-count").textContent = invs.length;
-    $("#stat-count-sub").textContent =
+    statCount.textContent = invs.length;
+    statCountSub.textContent =
       new Set(invs.map(i => i.Institution || "—")).size + " institutions · " +
       new Set(invs.map(i => i["Account Type"] || "—")).size + " account types";
-    $("#stat-rate").textContent = fmtPct(Data.weightedRate());
-    $("#stat-proj").textContent = fmt$(projected);
-    $("#stat-proj-k").textContent = `Projected · ${ui.years}Y`;
+    statRate.textContent = fmtPct(Data.weightedRate());
+    statProj.textContent = fmt$(projected);
+    statProjK.textContent = `Projected · ${ui.years}Y`;
+  }
 
+  function renderProjectionReadout(proj) {
     const end = proj.totals[proj.totals.length - 1];
     const { perTarget, count, total } = proj.contrib;
     const contributed = total * 12 * ui.years;
     const principal = Data.total(false);
+    const growth = Math.max(end - principal - contributed, 0);
     const splitTxt = count > 0 && ui.contribTouched
       ? `<span class="hl"><b>${fmt$full(total)}</b>/mo exact → <b>${count}</b> position${count === 1 ? "" : "s"}</span>`
       : count > 0
       ? `<span class="hl">${fmt$full(ui.monthly)}/mo → <b>${count}</b> position${count === 1 ? "" : "s"} · <b>${fmt$full(perTarget)}</b> each</span>`
       : `<span>no contribution targets selected</span>`;
+    const summary = $("#proj-readout-summary");
+    if (summary) summary.textContent = `Detailed · ${ui.years}Y · end ${fmt$(end)} · growth ${fmt$(growth)}`;
     $("#proj-readout").innerHTML = `
       ${splitTxt}
       <span>end value <b>${fmt$full(end)}</b></span>
       <span>principal <b>${fmt$full(principal)}</b></span>
       <span>contributed <b>${fmt$full(contributed)}</b></span>
-      <span>growth <b>${fmt$full(Math.max(end - principal - contributed, 0))}</b></span>
+      <span>growth <b>${fmt$full(growth)}</b></span>
       <span>${ui.taxOn ? "post-tax · " : ""}rates are real (inflation baked in)</span>`;
   }
 
@@ -2462,6 +2667,8 @@
     const contributionSummary = ui.simpleMonthlyEnabled
       ? `<span class="hl"><b>${fmt$full(proj.contribution.monthly)}</b>/mo simple contribution</span>`
       : `<span class="hl">simple contribution off · <b>${fmt$full(ui.simpleMonthly)}</b>/mo saved</span>`;
+    const summary = $("#proj-readout-summary");
+    if (summary) summary.textContent = `Simple · ${ui.years}Y · end net ${fmt$(endNet)} · ${fmtPct(proj.rate)}/yr`;
     $("#proj-readout").innerHTML = `
       <span class="hl"><b>${fmtPct(proj.rate)}</b>/yr aggregate rate</span>
       ${contributionSummary}
@@ -2613,6 +2820,7 @@
     renderContribChips(proj.contrib);
     renderAmortizedDebtCosts();
     renderStats(proj, aggregateProj);
+    renderProjectionReadout(proj);
     renderHeroExperience();
     renderBiome();
     if (ui.projectionView === "simple") {
@@ -3142,6 +3350,10 @@
     });
 
     document.querySelectorAll(".load-json").forEach(b => b.addEventListener("click", async e => {
+      if (!canCreateLedger()) {
+        toast(ledgerLimitMessage());
+        return;
+      }
       const btn = e.currentTarget;
       const label = btn.getAttribute("aria-label") || "Import from clipboard";
       const title = btn.title;
@@ -3199,7 +3411,6 @@
   wireControls();
   wireForm();
   wireIO();
-  wireCopies();
   renderHeroAmount();
 
   // Portfolios.init() restores the active copy from localStorage (seeding a
@@ -3209,7 +3420,6 @@
     loadActivePortfolioUiState();
     syncProjectionControlsToDom();
     Data.subscribe(renderAll);
-    Data.subscribe(pulseSaved);   // subscribed after init, so boot's initial load doesn't pulse
     renderAll();
     refreshPricesAfterLoad();
   });

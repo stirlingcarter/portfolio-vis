@@ -503,6 +503,48 @@ const Data = (() => {
     return { rows: [...rows.keys()], cols: [...cols], cells: Object.fromEntries(rows) };
   }
 
+  /* ---------- holdings history ----------
+     Portfolio value over time from per-ticker price histories.
+     seriesByTicker: Map<TICKER, [[msTimestamp, price]…]>, points sorted asc.
+     Holdings passing `filter` whose ticker has a series are valued on a shared
+     time grid as shares × price(t) — step interpolation (last price at or
+     before t), flat-extended at the edges so every ticker answers at every
+     grid time. Returns { times, values, included, excluded }; excluded lists
+     holdings that passed the filter but have no usable price series.
+  ------------------------------------ */
+  function historyPriceAt(points, t) {
+    if (t <= points[0][0]) return points[0][1];
+    let lo = 0, hi = points.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (points[mid][0] <= t) lo = mid; else hi = mid - 1;
+    }
+    return points[lo][1];
+  }
+
+  function historyValueSeries(seriesByTicker, opts) {
+    const { start, end, points: count = 90, taxOn = false, filter } = opts;
+    const usable = series => Array.isArray(series) && series.length >= 2;
+    const shares = new Map();
+    const included = [], excluded = [];
+    investments.forEach(inv => {
+      if (filter && !filter(inv)) return;
+      const sym = String(inv.Ticker || "").trim().toUpperCase();
+      if (!usable(seriesByTicker.get(sym))) { excluded.push(inv); return; }
+      const mult = taxOn ? (1 - taxRate(inv)) : 1;
+      shares.set(sym, (shares.get(sym) || 0) + (Number(inv.Amount) || 0) * mult);
+      included.push(inv);
+    });
+    const n = Math.max(2, Math.round(count) || 0);
+    const times = Array.from({ length: n }, (_, i) => start + (end - start) * i / (n - 1));
+    const values = times.map(t => {
+      let v = 0;
+      shares.forEach((s, sym) => { v += s * historyPriceAt(seriesByTicker.get(sym), t); });
+      return v;
+    });
+    return { times, values, included, excluded };
+  }
+
   /* ---------- simple aggregate projection ----------
      Aggregate assets into one line, but project each debt separately before
      summing the positive debt line. Amortized debts follow their own loan
@@ -624,6 +666,7 @@ const Data = (() => {
     FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS, LEVERAGE_LEVELS,
     subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
     presentValue, netValue, taxRate, pricePerShare, inferAmortPayment, isAmortized, isAsset, isDebt,
-    total, assetTotal, debtTotal, leverage, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection
+    total, assetTotal, debtTotal, leverage, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection,
+    historyValueSeries
   };
 })();

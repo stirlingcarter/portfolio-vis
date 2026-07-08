@@ -12,6 +12,7 @@
 const Portfolios = (() => {
 
   const KEY = "coldledger.portfolios.v1";
+  const MAX_LEDGER_COPIES = 8;
 
   // state = { activeId, order:[id...], copies:{ id: {id,name,updatedAt,investments[]} } }
   let state = null;
@@ -51,6 +52,7 @@ const Portfolios = (() => {
   }
 
   function makeCopy(name, investments) {
+    if (state.order.length >= MAX_LEDGER_COPIES) return null;
     const id = uid();
     state.copies[id] = { id, name, updatedAt: now(), investments: investments || [] };
     state.order.push(id);
@@ -111,7 +113,9 @@ const Portfolios = (() => {
   }
 
   function create(name) {
-    state.activeId = makeCopy((name || "Untitled").trim() || "Untitled", []);
+    const id = makeCopy((name || "Untitled").trim() || "Untitled", []);
+    if (!id) return;
+    state.activeId = id;
     write();
     loadActiveIntoData();
     return state.activeId;
@@ -120,7 +124,9 @@ const Portfolios = (() => {
   function duplicate(id) {
     const src = state.copies[id || state.activeId];
     if (!src) return;
-    state.activeId = makeCopy(uniqueName(src.name + " copy"), src.investments.map(x => ({ ...x })));
+    const copyId = makeCopy(uniqueName(src.name + " copy"), src.investments.map(x => ({ ...x })));
+    if (!copyId) return;
+    state.activeId = copyId;
     write();
     loadActiveIntoData();
     return state.activeId;
@@ -128,7 +134,9 @@ const Portfolios = (() => {
 
   function importCopy(name, investments) {
     if (!Array.isArray(investments)) throw new Error("JSON root must be an array of investments.");
-    state.activeId = makeCopy(uniqueName(name || "Imported from clipboard"), investments.map(x => ({ ...x })));
+    const id = makeCopy(uniqueName(name || "Imported from clipboard"), investments.map(x => ({ ...x })));
+    if (!id) throw new Error(`Maximum of ${MAX_LEDGER_COPIES} ledgers reached.`);
+    state.activeId = id;
     write();
     loadActiveIntoData();
     return state.activeId;
@@ -152,5 +160,7 @@ const Portfolios = (() => {
     loadActiveIntoData();
   }
 
-  return { init, list, activeId, activeName, switchTo, create, duplicate, importCopy, rename, remove };
+  function maxLedgers() { return MAX_LEDGER_COPIES; }
+
+  return { init, list, activeId, activeName, switchTo, create, duplicate, importCopy, rename, remove, maxLedgers };
 })();

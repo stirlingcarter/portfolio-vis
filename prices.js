@@ -102,6 +102,117 @@ const Prices = (() => {
     return { ticker: sym, price, currency: meta.currency || "USD", source: "Yahoo Finance" };
   }
 
+  /* ---------- historical price series ---------- */
+
+  // Look-back ranges for the holdings-history chart. Each maps to ONE upstream
+  // request per ticker: Yahoo's chart endpoint takes interval/range pairs, and
+  // CoinGecko's market_chart takes a day count (its keyless tier auto-picks
+  // 5-minutely / hourly / daily granularity). `coingeckoDays: null` marks a
+  // range crypto cannot serve — CoinGecko's free tier hard-caps historical
+  // data at the past 365 days. `ttlMs` is how long the UI may reuse a cached
+  // series before refetching.
+  const HISTORY_RANGES = [
+    { key: "1h",  label: "1H",  ms: 3600e3,               yahoo: { range: "1d",  interval: "2m"  }, coingeckoDays: "1",   ttlMs: 3 * 60e3 },
+    { key: "24h", label: "24H", ms: 24 * 3600e3,          yahoo: { range: "5d",  interval: "15m" }, coingeckoDays: "1",   ttlMs: 10 * 60e3 },
+    { key: "3d",  label: "3D",  ms: 3 * 86400e3,          yahoo: { range: "5d",  interval: "30m" }, coingeckoDays: "3",   ttlMs: 30 * 60e3 },
+    { key: "1w",  label: "1W",  ms: 7 * 86400e3,          yahoo: { range: "1mo", interval: "1h"  }, coingeckoDays: "7",   ttlMs: 3600e3 },
+    { key: "2w",  label: "2W",  ms: 14 * 86400e3,         yahoo: { range: "1mo", interval: "1h"  }, coingeckoDays: "14",  ttlMs: 3600e3 },
+    { key: "1m",  label: "1M",  ms: 30 * 86400e3,         yahoo: { range: "3mo", interval: "1d"  }, coingeckoDays: "30",  ttlMs: 3 * 3600e3 },
+    { key: "1y",  label: "1Y",  ms: 365 * 86400e3,        yahoo: { range: "1y",  interval: "1d"  }, coingeckoDays: "365", ttlMs: 86400e3 },
+    { key: "5y",  label: "5Y",  ms: 5 * 365 * 86400e3,    yahoo: { range: "5y",  interval: "1wk" }, coingeckoDays: null,  ttlMs: 3 * 86400e3 },
+    { key: "10y", label: "10Y", ms: 10 * 365 * 86400e3,   yahoo: { range: "10y", interval: "1mo" }, coingeckoDays: null,  ttlMs: 3 * 86400e3 },
+    { key: "20y", label: "20Y", ms: 20 * 365 * 86400e3,   yahoo: { range: "max", interval: "1mo" }, coingeckoDays: null,  ttlMs: 3 * 86400e3 }
+  ];
+
+  function historyRange(rangeKey) {
+    const spec = HISTORY_RANGES.find(r => r.key === rangeKey);
+    if (!spec) throw new Error(`unknown history range "${rangeKey}"`);
+    return spec;
+  }
+
+  // Yahoo history: one call returns the whole series for the range.
+  // Points are [msTimestamp, closePrice]; null candles are dropped, and the
+  // live regularMarketPrice is appended so the series ends at "now".
+  async function stockHistory(ticker, spec) {
+    const sym = norm(ticker);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}` +
+      `?interval=${spec.yahoo.interval}&range=${spec.yahoo.range}`;
+    const data = await fetchJSONResilient(url);
+    const result = data?.chart?.result?.[0];
+    const ts = result?.timestamp;
+    const closes = result?.indicators?.quote?.[0]?.close;
+    if (!Array.isArray(ts) || !Array.isArray(closes)) throw new Error(`no history for ${sym}`);
+    const points = [];
+    for (let i = 0; i < ts.length; i++) {
+      const price = closes[i];
+      if (typeof price === "number" && isFinite(price)) points.push([ts[i] * 1000, price]);
+    }
+    const live = result?.meta?.regularMarketPrice;
+    const liveAt = (Number(result?.meta?.regularMarketTime) || 0) * 1000;
+    if (typeof live === "number" && isFinite(live) && points.length && liveAt > points[points.length - 1][0]) {
+      points.push([liveAt, live]);
+    }
+    if (points.length < 2) throw new Error(`no history for ${sym}`);
+    return points;
+  }
+
+  // CoinGecko history. The keyless/Demo tier only serves the past 365 days, so
+  // ranges beyond that throw immediately (no network call).
+  async function cryptoHistory(ticker, spec) {
+    const sym = norm(ticker);
+    const id = CRYPTO_IDS[sym];
+    if (!id) throw new Error(`unknown coin ${sym}`);
+    if (!spec.coingeckoDays) throw new Error(`${sym}: CoinGecko free data stops at 1y look-back`);
+    const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}/market_chart` +
+      `?vs_currency=usd&days=${spec.coingeckoDays}`;
+    const data = await fetchJSONWithTimeout(url);
+    const points = (Array.isArray(data?.prices) ? data.prices : [])
+      .filter(p => Array.isArray(p) && typeof p[1] === "number" && isFinite(p[1]))
+      .map(p => [Number(p[0]), p[1]]);
+    if (points.length < 2) throw new Error(`no history for ${sym}`);
+    return points;
+  }
+
+  // Resolve one ticker's price history for a range →
+  // { ticker, points: [[ms, price]…], fetchedAt, source }. Throws on failure.
+  async function history(ticker, rangeKey) {
+    const sym = norm(ticker);
+    const spec = historyRange(rangeKey);
+    if (!sym) throw new Error("empty ticker");
+    const now = Date.now();
+    if (fixedQuote(sym)) {
+      return { ticker: sym, points: [[now - spec.ms, 1], [now, 1]], fetchedAt: now, source: "Fixed USD" };
+    }
+    if (sym in CRYPTO_IDS) {
+      return { ticker: sym, points: await cryptoHistory(sym, spec), fetchedAt: Date.now(), source: "CoinGecko" };
+    }
+    return { ticker: sym, points: await stockHistory(sym, spec), fetchedAt: Date.now(), source: "Yahoo Finance" };
+  }
+
+  // Resolve many tickers' histories → { results: Map, errors: Map }. Stocks go
+  // in parallel (one Yahoo call each); crypto goes sequentially to stay well
+  // inside CoinGecko's keyless IP-based rate limiting.
+  async function historyMany(tickers, rangeKey) {
+    historyRange(rangeKey);   // validate up front
+    const syms = [...new Set(tickers.map(norm).filter(Boolean))];
+    const results = new Map();
+    const errors = new Map();
+    const cryptoSyms = syms.filter(s => !fixedQuote(s) && s in CRYPTO_IDS);
+    const otherSyms = syms.filter(s => !cryptoSyms.includes(s));
+
+    const otherP = Promise.all(otherSyms.map(sym =>
+      history(sym, rangeKey).then(h => results.set(sym, h)).catch(err => errors.set(sym, err))
+    ));
+    const cryptoP = (async () => {
+      for (const sym of cryptoSyms) {
+        try { results.set(sym, await history(sym, rangeKey)); }
+        catch (err) { errors.set(sym, err); }
+      }
+    })();
+    await Promise.all([otherP, cryptoP]);
+    return { results, errors };
+  }
+
   /* ---------- crypto via CoinGecko ---------- */
 
   // Batch-friendly: one CoinGecko call resolves many coins at once.
@@ -164,5 +275,5 @@ const Prices = (() => {
     return results;
   }
 
-  return { isCrypto, quote, quoteMany, CRYPTO_IDS };
+  return { isCrypto, quote, quoteMany, history, historyMany, HISTORY_RANGES, CRYPTO_IDS };
 })();
