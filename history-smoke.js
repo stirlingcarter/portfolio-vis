@@ -76,6 +76,10 @@ assert.match(drawHistoryChartSource, /addEventListener\("pointerdown"/, "history
 assert.match(drawHistoryChartSource, /addEventListener\("pointermove"/, "history chart scrubbing follows pointer drags");
 assert.match(drawHistoryChartSource, /setPointerCapture/, "touch drags keep scrubbing without lift-and-tap");
 assert.match(drawHistoryChartSource, /"vector-effect": "non-scaling-stroke"/, "line thickness is screen-constant, not viewBox-scaled");
+assert.match(drawHistoryChartSource, /scrubRaf = requestAnimationFrame\(applyScrub\)/, "scrub work is coalesced to one update per frame");
+assert.match(drawHistoryChartSource, /if \(i === scrubIdx\) \{ moveTip\(scrubX, scrubY\); return; \}/, "unchanged data point skips tooltip rebuild");
+assert.match(drawHistoryChartSource, /scrubLayer\.appendChild\(cross\)/, "crosshair lives outside the masked plot layer");
+assert.doesNotMatch(drawHistoryChartSource, /plotLayer\.appendChild\(cross\)/, "crosshair is not inside the masked plot layer");
 const historySvgRule = extractCssRule(".history-chart-svg");
 assert.match(historySvgRule, /touch-action:\s*none/, "touch drags scrub the chart instead of scrolling the page");
 
