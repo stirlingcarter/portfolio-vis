@@ -64,6 +64,13 @@ assert.match(uiSource, /Assets \$\{fmt\$full\(assets\)\} · Debts \$\{fmt\$full\
 assert.match(uiSource, /ledgerGroupBlock\("All positions", rows\)/, "ungrouped ledger keeps the same summary shape");
 assert.match(uiSource, /inst\.netValue \+= isDebt \? -value : value;/, "Holdings institution net subtracts debt values");
 assert.match(uiSource, /institution-pen-meta", `\$\{fmt\$\(inst\.netValue\)\} net/, "Holdings institution readout labels net value");
+assert.match(uiSource, /function assetDebtChart\(container, assets, debts\)/, "sixth chart renders assets and debt");
+assert.match(uiSource, /ASSET_DIMS\.forEach\([\s\S]*?donut\(grid,[\s\S]*?\);[\s\S]*?assetDebtChart\(grid, invested, Data\.debtTotal\(ui\.taxOn\)\);/, "assets/debt chart follows the five invested-asset donuts");
+assert.match(uiSource, /const groupColor = g => g\.color \|\| colorFor\(g\.colorKey \|\| g\.label\);/, "shared donut helper accepts explicit semantic colors");
+assert.match(uiSource, /fill: groupColor\(g\),[\s\S]*?class: "pie-depth"[\s\S]*?fill: groupColor\(g\),[\s\S]*?class: "donut-seg pie-seg"/, "shared donut helper colors both depth and top slices");
+assert.match(uiSource, /sw\.style\.background = groupColor\(g\);/, "shared donut helper colors legend swatches");
+assert.match(uiSource, /donut\(container, "Assets vs debt", \[[\s\S]*?label: "Assets"[\s\S]*?color: "var\(--asset\)"[\s\S]*?label: "Debt"[\s\S]*?color: "var\(--danger\)"[\s\S]*?\], "assets \+ debt"\);/, "assets/debt chart uses the shared 3D donut helper with semantic colors");
+assert.doesNotMatch(uiSource, /asset-debt-(?:card|body|pie-svg|slice|legend|swatch|amount|note)/, "assets/debt chart does not invent separate pie markup classes");
 assert.doesNotMatch(uiSource, /ledger-sort-dir|ledgerSortDir/, "ledger sort direction button and state are removed");
 assert.ok(
   indexSource.indexOf('<option value="Institution">Institution</option>') <
@@ -97,6 +104,7 @@ assert.match(
   /\.ledger-tab\[aria-selected="true"\]\s+\.ledger-tab-main\s*\{[\s\S]*?padding-right:\s*66px;[\s\S]*?\}/,
   "active tab text reserves room for overlaid actions"
 );
+assert.doesNotMatch(stylesSource, /\.asset-debt-/, "assets/debt chart does not add separate pie CSS");
 assert.doesNotMatch(
   stylesSource,
   /@media \(max-width: 540px\) \{[\s\S]*?\.ledger-tab\[aria-selected="true"\]\s*\{[^}]*\b(?:flex-basis|min-width|width):\s*100%/,

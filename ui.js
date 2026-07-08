@@ -634,6 +634,7 @@
   function donut(container, title, groups, totalLabel) {
     const card = el("div", "panel donut-card");
     const displayTotal = groups.reduce((s, g) => s + g.value, 0);
+    const groupColor = g => g.color || colorFor(g.colorKey || g.label);
     const head = el("div", "donut-card-head");
     head.appendChild(el("h3", null, title));
     head.appendChild(el("div", "donut-total", `<b>${fmt$(displayTotal)}</b><span>${totalLabel}</span>`));
@@ -667,12 +668,12 @@
       const d = `M ${cx} ${cy} L ${x0o} ${y0o} A ${rOut} ${rOut} 0 ${large} 1 ${x1o} ${y1o} Z`;
       const depthPath = svgEl("path", {
         d,
-        fill: colorFor(g.label),
+        fill: groupColor(g),
         class: "pie-depth"
       });
       const path = svgEl("path", {
         d,
-        fill: colorFor(g.label),
+        fill: groupColor(g),
         class: "donut-seg pie-seg"
       });
       const showSliceTip = e =>
@@ -694,7 +695,7 @@
     const legend = el("div", "legend");
     groups.slice(0, 8).forEach(g => {
       const row = el("div", "legend-row");
-      const sw = el("span", "swatch"); sw.style.background = colorFor(g.label);
+      const sw = el("span", "swatch"); sw.style.background = groupColor(g);
       row.appendChild(sw);
       row.appendChild(el("span", "lbl", g.label));
       row.appendChild(el("span", "pct", fmtPct(g.value / total)));
@@ -999,6 +1000,16 @@
       denominator,
       denominatorLabel: "total invested assets"
     });
+  }
+
+  function assetDebtChart(container, assets, debts) {
+    const assetValue = Math.max(assets, 0);
+    const debtValue = Math.max(debts, 0);
+    const rows = Data.all();
+    donut(container, "Assets vs debt", [
+      { label: "Assets", value: assetValue, count: rows.filter(Data.isAsset).length, color: "var(--asset)" },
+      { label: "Debt", value: debtValue, count: rows.filter(Data.isDebt).length, color: "var(--danger)" }
+    ], "assets + debt");
   }
 
   /* ---------- spatial 2026 visualizations ---------- */
@@ -3256,6 +3267,7 @@
     grid.innerHTML = "";
     ASSET_DIMS.forEach(dim =>
       donut(grid, "% by " + dimLabel(dim), Data.groupBy(dim, ui.taxOn, Data.isAsset), "invested"));
+    assetDebtChart(grid, invested, Data.debtTotal(ui.taxOn));
 
     hBars($("#ticker-bars"), Data.groupBy("Ticker", ui.taxOn, Data.isAsset), {
       denominator: invested,
