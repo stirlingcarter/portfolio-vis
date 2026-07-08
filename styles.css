@@ -1143,6 +1143,33 @@ input[type="range"]::-moz-range-thumb {
 .history-chart-svg .history-baseline {
   opacity: .36;
 }
+/* Scrub crosshair + marker: HTML overlays composited via transform, kept out
+   of the SVG so scrubbing never repaints the masked/filtered chart surface. */
+.history-scrub-cross {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  background: repeating-linear-gradient(to bottom, var(--brass-dim) 0 3px, transparent 3px 6px);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 2;
+}
+.history-scrub-dot {
+  position: absolute;
+  left: -4.5px;
+  top: -4.5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--canvas);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 2;
+}
+.history-scrub-dot.is-up { background: var(--asset-bright); }
+.history-scrub-dot.is-down { background: var(--danger); }
 .history-baseline { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 5; stroke-opacity: .75; }
 /* Screen-pixel width (the path uses vector-effect: non-scaling-stroke), so the
    line stays solid on phones instead of thinning with the viewBox scale. */
@@ -1538,10 +1565,11 @@ tr.editing .mini-btn { min-width: 26px; min-height: 28px; padding: 0 8px; font-s
 /* ---------- tooltip / toast ---------- */
 
 #tooltip {
-  position: fixed; pointer-events: none; z-index: 50;
+  position: fixed; left: 0; top: 0; pointer-events: none; z-index: 50;
   background: var(--tooltip-bg); border: 1px solid var(--brass-dim); border-radius: 8px;
   padding: 8px 11px; font-family: var(--mono); font-size: .72rem; color: var(--ink);
   opacity: 0; transition: opacity .1s; max-width: 260px;
+  will-change: transform;
 }
 #tooltip .tt-k { color: var(--muted); }
 #tooltip .tt-mark { color: var(--brass); margin-right: 3px; }

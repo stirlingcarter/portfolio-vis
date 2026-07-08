@@ -78,8 +78,11 @@ assert.match(drawHistoryChartSource, /setPointerCapture/, "touch drags keep scru
 assert.match(drawHistoryChartSource, /"vector-effect": "non-scaling-stroke"/, "line thickness is screen-constant, not viewBox-scaled");
 assert.match(drawHistoryChartSource, /scrubRaf = requestAnimationFrame\(applyScrub\)/, "scrub work is coalesced to one update per frame");
 assert.match(drawHistoryChartSource, /if \(i === scrubIdx\) \{ moveTip\(scrubX, scrubY\); return; \}/, "unchanged data point skips tooltip rebuild");
-assert.match(drawHistoryChartSource, /scrubLayer\.appendChild\(cross\)/, "crosshair lives outside the masked plot layer");
+assert.match(drawHistoryChartSource, /el\("div", "history-scrub-cross"\)/, "crosshair is an HTML overlay, not an SVG node");
 assert.doesNotMatch(drawHistoryChartSource, /plotLayer\.appendChild\(cross\)/, "crosshair is not inside the masked plot layer");
+assert.match(drawHistoryChartSource, /cross\.style\.transform = `translate3d/, "crosshair moves via compositor-only transform");
+const tooltipRule = extractCssRule("#tooltip");
+assert.match(tooltipRule, /left:\s*0;\s*top:\s*0/, "tooltip is transform-anchored at the origin");
 const historySvgRule = extractCssRule(".history-chart-svg");
 assert.match(historySvgRule, /touch-action:\s*none/, "touch drags scrub the chart instead of scrolling the page");
 

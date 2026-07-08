@@ -611,10 +611,13 @@
 
   const tooltip = $("#tooltip");
   let tipW = 0, tipH = 0;   // size cache so moveTip never re-measures
+  // Positioned via transform (left/top stay 0): translate is compositor-only,
+  // so following the cursor never triggers layout or paint.
   function placeTip(x, y) {
     const pad = 14;
-    tooltip.style.left = Math.min(x + pad, window.innerWidth - tipW - 8) + "px";
-    tooltip.style.top = Math.max(y - tipH - pad, 8) + "px";
+    const left = Math.min(x + pad, window.innerWidth - tipW - 8);
+    const top = Math.max(y - tipH - pad, 8);
+    tooltip.style.transform = `translate3d(${left}px, ${top}px, 0)`;
   }
   function showTip(html, x, y) {
     tooltip.innerHTML = html;
@@ -3015,16 +3018,17 @@
     plotLayer.appendChild(svgEl("path", { d: lineD, fill: "none", "vector-effect": "non-scaling-stroke", class: `history-line ${dir}` }));
     plotLayer.appendChild(svgEl("circle", { cx: x(N), cy: y(values[N]), r: 4, class: `history-dot ${dir}` }));
 
-    // The scrub crosshair/marker live in their own UNMASKED overlay group:
-    // inside `plotLayer` every move would invalidate the mask + the line's
-    // drop-shadow filter and re-rasterize the whole plot, which is what made
-    // scrubbing lag. In the overlay only these two tiny nodes repaint.
-    const scrubLayer = svgEl("g", { class: "history-scrub-layer" });
-    const cross = svgEl("line", { x1: 0, x2: 0, y1: padT, y2: plotBottom, class: "crosshair-line", opacity: 0 });
-    const marker = svgEl("circle", { cx: 0, cy: 0, r: 3.5, class: `history-dot ${dir}`, opacity: 0 });
-    scrubLayer.appendChild(cross);
-    scrubLayer.appendChild(marker);
-    svg.appendChild(scrubLayer);
+    // The scrub crosshair/marker are HTML overlay elements OUTSIDE the SVG:
+    // any attribute change inside an inline SVG repaints the whole SVG — here
+    // a viewport-wide surface with a mask + drop-shadow filter — which is what
+    // made scrubbing lag behind the mouse. As separate composited divs moved
+    // via transform, scrubbing repaints nothing at all.
+    const cross = el("div", "history-scrub-cross");
+    cross.style.top = (padT / H * 100) + "%";
+    cross.style.height = ((plotBottom - padT) / H * 100) + "%";
+    const marker = el("div", `history-scrub-dot ${dir}`);
+    container.appendChild(cross);
+    container.appendChild(marker);
 
     // Pointer events fire faster than frames render; coalesce them so all the
     // real work (index lookup, DOM writes, tooltip HTML) runs at most once per
@@ -3038,10 +3042,12 @@
       const i = Math.round(clamp((mx - padL) / iw, 0, 1) * N);
       if (i === scrubIdx) { moveTip(scrubX, scrubY); return; }
       scrubIdx = i;
-      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
-      cross.setAttribute("opacity", 1);
-      marker.setAttribute("cx", x(i)); marker.setAttribute("cy", y(values[i]));
-      marker.setAttribute("opacity", 1);
+      const xPx = x(i) / W * rect.width;
+      const yPx = y(values[i]) / H * rect.height;
+      cross.style.transform = `translate3d(${xPx.toFixed(1)}px, 0, 0)`;
+      cross.style.opacity = 1;
+      marker.style.transform = `translate3d(${xPx.toFixed(1)}px, ${yPx.toFixed(1)}px, 0)`;
+      marker.style.opacity = 1;
       const delta = values[i] - values[0];
       const pct = values[0] ? delta / values[0] : 0;
       showTip(
@@ -3057,8 +3063,8 @@
     const endScrub = () => {
       if (scrubRaf) { cancelAnimationFrame(scrubRaf); scrubRaf = 0; }
       scrubIdx = -1;
-      cross.setAttribute("opacity", 0);
-      marker.setAttribute("opacity", 0);
+      cross.style.opacity = 0;
+      marker.style.opacity = 0;
       hideTip();
     };
 
