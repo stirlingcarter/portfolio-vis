@@ -20,7 +20,7 @@ assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own st
 assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
 assert.match(indexSource, /Total assets value history/, "history section is labeled as total assets value");
 assert.match(indexSource, /plus other assets held flat at current value/, "history note explains the flat add-on");
-assert.match(uiSource, /total assets<\/span> \$\{fmt\$full\(values\[i\]\)\}/, "history tooltip reports total assets");
+assert.match(uiSource, /<span class="tt-k">total assets<\/span> <span><\/span>/, "history tooltip skeleton reports total assets");
 assert.match(uiSource, /Data\.isAsset\(inv\) && !pricedByHistory\.has\(inv\)/, "unpriced assets ride on top of the series");
 assert.match(uiSource, /series\.values = series\.values\.map\(v => v \+ flatAssetValue\)/, "flat add-on shifts every point so the line tracks total assets");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
@@ -77,7 +77,11 @@ assert.match(drawHistoryChartSource, /addEventListener\("pointermove"/, "history
 assert.match(drawHistoryChartSource, /setPointerCapture/, "touch drags keep scrubbing without lift-and-tap");
 assert.match(drawHistoryChartSource, /"vector-effect": "non-scaling-stroke"/, "line thickness is screen-constant, not viewBox-scaled");
 assert.match(drawHistoryChartSource, /scrubRaf = requestAnimationFrame\(applyScrub\)/, "scrub work is coalesced to one update per frame");
-assert.match(drawHistoryChartSource, /if \(i === scrubIdx\) \{ moveTip\(scrubX, scrubY\); return; \}/, "unchanged data point skips tooltip rebuild");
+assert.match(drawHistoryChartSource, /if \(i === scrubIdx\) \{ moveTip\(aimX, scrubY\); return; \}/, "unchanged data point skips tooltip rebuild");
+assert.match(drawHistoryChartSource, /getPredictedEvents/, "scrub aims at browser-predicted pointer positions");
+assert.match(drawHistoryChartSource, /velX \* SCRUB_LOOKAHEAD_MS/, "scrub extrapolates cursor velocity when prediction is unavailable");
+assert.match(drawHistoryChartSource, /settleTimer = setTimeout/, "scrub settles back to the true position once motion stops");
+assert.match(drawHistoryChartSource, /tipNodes\.val\.textContent = fmt\$full\(values\[i\]\)/, "tooltip updates text nodes in place, not innerHTML per frame");
 assert.match(drawHistoryChartSource, /el\("div", "history-scrub-cross"\)/, "crosshair is an HTML overlay, not an SVG node");
 assert.doesNotMatch(drawHistoryChartSource, /plotLayer\.appendChild\(cross\)/, "crosshair is not inside the masked plot layer");
 assert.match(drawHistoryChartSource, /cross\.style\.transform = `translate3d/, "crosshair moves via compositor-only transform");

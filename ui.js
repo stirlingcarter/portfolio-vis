@@ -3030,17 +3030,33 @@
     container.appendChild(cross);
     container.appendChild(marker);
 
-    // Pointer events fire faster than frames render; coalesce them so all the
-    // real work (index lookup, DOM writes, tooltip HTML) runs at most once per
-    // animation frame, and rebuild the tooltip only when the data point under
-    // the cursor actually changes — in-between moves just repin its position.
+    // Pointer events are coalesced to one update per animation frame. Beyond
+    // that, two latency killers — a crosshair that trails the cursor reads as
+    // lag even at a locked 60fps, because the event→paint pipeline is always
+    // a couple frames behind the hardware cursor:
+    //  · AIM AHEAD: browser pointer prediction (getPredictedEvents) when
+    //    available, else a small velocity extrapolation, targets where the
+    //    cursor will be when this frame reaches the screen. A settle pass
+    //    ~60ms after the last move snaps back to the true resting position.
+    //  · NO REFLOW IN MOTION: the tooltip is a fixed skeleton whose three
+    //    text nodes are updated in place — no innerHTML parsing, no node
+    //    churn, and it's measured once per gesture instead of every frame.
+    const SCRUB_LOOKAHEAD_MS = 24;
     let scrubRaf = 0, scrubX = 0, scrubY = 0, scrubIdx = -1;
+    let velX = 0, lastEvX = 0, lastEvY = 0, lastEvT = 0, predicted = false;
+    let settleTimer = 0, tipNodes = null;
+    const ensureTipNodes = () => {
+      tooltip.innerHTML = `<b></b><br><span class="tt-k">total assets</span> <span></span><br><span class="tt-k">vs start</span> <span></span>`;
+      const parts = tooltip.querySelectorAll("b, span");
+      tipNodes = { time: parts[0], val: parts[2], delta: parts[4] };
+    };
     const applyScrub = () => {
       scrubRaf = 0;
       const rect = svg.getBoundingClientRect();
-      const mx = (scrubX - rect.left) / rect.width * W;
+      const aimX = predicted ? scrubX : scrubX + velX * SCRUB_LOOKAHEAD_MS;
+      const mx = (aimX - rect.left) / rect.width * W;
       const i = Math.round(clamp((mx - padL) / iw, 0, 1) * N);
-      if (i === scrubIdx) { moveTip(scrubX, scrubY); return; }
+      if (i === scrubIdx) { moveTip(aimX, scrubY); return; }
       scrubIdx = i;
       const xPx = x(i) / W * rect.width;
       const yPx = y(values[i]) / H * rect.height;
@@ -3048,21 +3064,54 @@
       cross.style.opacity = 1;
       marker.style.transform = `translate3d(${xPx.toFixed(1)}px, ${yPx.toFixed(1)}px, 0)`;
       marker.style.opacity = 1;
+      const firstShow = !tipNodes;
+      if (firstShow) ensureTipNodes();
       const delta = values[i] - values[0];
       const pct = values[0] ? delta / values[0] : 0;
-      showTip(
-        `<b>${fmtHistoryTime(times[i], spec, true)}</b><br>` +
-        `<span class="tt-k">total assets</span> ${fmt$full(values[i])}<br>` +
-        `<span class="tt-k">vs start</span> ${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`,
-        scrubX, scrubY);
+      tipNodes.time.textContent = fmtHistoryTime(times[i], spec, true);
+      tipNodes.val.textContent = fmt$full(values[i]);
+      tipNodes.delta.textContent = `${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`;
+      if (firstShow) {
+        tooltip.style.opacity = 1;
+        tipW = tooltip.offsetWidth; tipH = tooltip.offsetHeight;
+      }
+      moveTip(aimX, scrubY);
     };
-    const scrubTo = (clientX, clientY) => {
-      scrubX = clientX; scrubY = clientY;
+    const scrubTo = (rawX, aimX, aimY, hasPrediction) => {
+      const t = performance.now();
+      if (lastEvT && t > lastEvT && t - lastEvT < 100) {
+        velX = velX * .6 + ((rawX - lastEvX) / (t - lastEvT)) * .4;
+      }
+      lastEvX = rawX; lastEvY = aimY; lastEvT = t;
+      predicted = hasPrediction;
+      scrubX = aimX; scrubY = aimY;
       if (!scrubRaf) scrubRaf = requestAnimationFrame(applyScrub);
+      // When events stop, re-apply at the true (unextrapolated) position so
+      // the resting crosshair never sits on a predicted overshoot.
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        velX = 0; predicted = false;
+        scrubX = lastEvX; scrubY = lastEvY;
+        if (!scrubRaf) scrubRaf = requestAnimationFrame(applyScrub);
+      }, 60);
+    };
+    const pointToScrub = e => {
+      let aimX = e.clientX, aimY = e.clientY, hasPrediction = false;
+      if (e.getPredictedEvents) {
+        const p = e.getPredictedEvents();
+        if (p && p.length) {
+          aimX = p[p.length - 1].clientX;
+          aimY = p[p.length - 1].clientY;
+          hasPrediction = true;
+        }
+      }
+      scrubTo(e.clientX, aimX, aimY, hasPrediction);
     };
     const endScrub = () => {
       if (scrubRaf) { cancelAnimationFrame(scrubRaf); scrubRaf = 0; }
-      scrubIdx = -1;
+      clearTimeout(settleTimer);
+      scrubIdx = -1; tipNodes = null;
+      velX = 0; lastEvT = 0; predicted = false;
       cross.style.opacity = 0;
       marker.style.opacity = 0;
       hideTip();
@@ -3078,9 +3127,9 @@
         try { svg.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
       }
       e.preventDefault();
-      scrubTo(e.clientX, e.clientY);
+      pointToScrub(e);
     });
-    svg.addEventListener("pointermove", e => scrubTo(e.clientX, e.clientY));
+    svg.addEventListener("pointermove", pointToScrub);
     svg.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") endScrub(); });
     svg.addEventListener("pointercancel", endScrub);
     svg.addEventListener("pointerleave", endScrub);
