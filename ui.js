@@ -97,7 +97,8 @@
     editingId: null,        // ledger row currently being edited in place (or null)
     ledgerSort: "ID",
     ledgerGroupBy: "Institution",
-    lastPriceRefreshAt: 0
+    lastPriceRefreshAt: 0,
+    historyRange: "24h"     // holdings-history look-back (keys in Prices.HISTORY_RANGES)
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -364,6 +365,7 @@
         : ui.simpleMonthly > 0;
     }
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
+    if ("historyRange" in state) ui.historyRange = coerceHistoryRange(state.historyRange);
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
@@ -394,6 +396,7 @@
         simpleMonthlyEnabled: ui.simpleMonthlyEnabled === true
       },
       heroMetric: heroMetricFor(ui.heroMetric).key,
+      historyRange: coerceHistoryRange(ui.historyRange),
       biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
@@ -2706,6 +2709,338 @@
       </div>`;
   }
 
+  /* ---------- holdings history (Robinhood-style look-back) ----------
+     Current auto-priced asset holdings, valued at PAST prices: one smooth
+     line of shares × price(t) summed per ticker over the selected look-back.
+     Price series come from Prices.historyMany and are cached per
+     (ticker, range) in localStorage so range flips and reloads reuse data.
+
+     Phase model: every rendered point comes from the same cached snapshot —
+     the chart's "now" is the OLDEST fetchedAt among the series in use, so the
+     whole line shifts together as one coherent phase instead of each ticker
+     demanding its own exact-Now fetch. Staleness is bounded per range by
+     Prices.HISTORY_RANGES[].ttlMs.
+  ------------------------------------ */
+
+  const HISTORY_STORAGE_KEY = "coldledger.history.v1";
+  const HISTORY_CACHE_MAX_ENTRIES = 120;      // ~tickers × ranges, pruned oldest-first
+  const HISTORY_CACHE_MAX_AGE_MS = 14 * 86400e3;
+  const HISTORY_STORED_POINTS = 160;          // per-series cap kept in localStorage
+  const HISTORY_GRID_POINTS = 120;            // rendered portfolio-line resolution
+  const HISTORY_RETRY_MS = 10 * 60e3;         // wait before retrying a failed ticker
+
+  function coerceHistoryRange(value) {
+    return Prices.HISTORY_RANGES.some(r => r.key === value) ? value : "24h";
+  }
+  const historyRangeSpec = () => Prices.HISTORY_RANGES.find(r => r.key === coerceHistoryRange(ui.historyRange));
+  const historyCacheKey = (sym, rangeKey) => `${sym}|${rangeKey}`;
+  const isHistoryHolding = inv => Data.isAsset(inv) && shouldAutoPrice(inv);
+
+  function readHistoryStorage() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || "{}");
+      return parsed && typeof parsed === "object" && parsed.series && typeof parsed.series === "object"
+        ? { series: parsed.series }
+        : { series: {} };
+    } catch {
+      return { series: {} };
+    }
+  }
+
+  const historyCache = readHistoryStorage();
+  const historyFailures = new Map();   // `${sym}|${range}` → { at, message } (session-only)
+  let historyFetchKey = null;          // dedupe identical in-flight fetches
+
+  function downsampleHistoryPoints(points) {
+    if (points.length <= HISTORY_STORED_POINTS) return points;
+    const step = (points.length - 1) / (HISTORY_STORED_POINTS - 1);
+    return Array.from({ length: HISTORY_STORED_POINTS }, (_, i) => points[Math.round(i * step)]);
+  }
+
+  function pruneAndWriteHistoryCache() {
+    const now = Date.now();
+    const entries = Object.entries(historyCache.series)
+      .filter(([, e]) => e && Array.isArray(e.points) && now - e.fetchedAt < HISTORY_CACHE_MAX_AGE_MS)
+      .sort((a, b) => b[1].fetchedAt - a[1].fetchedAt)
+      .slice(0, HISTORY_CACHE_MAX_ENTRIES);
+    historyCache.series = Object.fromEntries(entries);
+    try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({ version: 1, series: historyCache.series })); }
+    catch { /* quota / privacy mode — cache stays in memory */ }
+  }
+
+  function freshHistoryEntry(sym, spec) {
+    const entry = historyCache.series[historyCacheKey(sym, spec.key)];
+    return entry && Array.isArray(entry.points) && entry.points.length >= 2
+      && Date.now() - entry.fetchedAt < spec.ttlMs ? entry : null;
+  }
+
+  // Unique fetchable tickers among current auto-priced asset holdings (USD is
+  // synthesized locally as flat $1 and never fetched).
+  function historyTickers() {
+    const syms = new Set();
+    Data.all().filter(isHistoryHolding).forEach(inv => {
+      const sym = String(inv.Ticker || "").trim().toUpperCase();
+      if (sym && fixedPriceForTicker(sym) == null) syms.add(sym);
+    });
+    return [...syms];
+  }
+
+  // Fetch any series that are missing or past TTL for the active range, then
+  // re-render. A few results per graph: one request per ticker per range, and
+  // failures are not retried for HISTORY_RETRY_MS so errors can't thrash.
+  async function ensureHistorySeries() {
+    const spec = historyRangeSpec();
+    const now = Date.now();
+    const missing = historyTickers().filter(sym => {
+      if (freshHistoryEntry(sym, spec)) return false;
+      const failure = historyFailures.get(historyCacheKey(sym, spec.key));
+      return !(failure && now - failure.at < HISTORY_RETRY_MS);
+    });
+    if (!missing.length) return;
+    const key = spec.key + "|" + missing.sort().join(",");
+    if (historyFetchKey === key) return;
+    historyFetchKey = key;
+    setHistoryStatus(`Loading ${spec.label} price history for ${missing.length} ticker${missing.length === 1 ? "" : "s"}…`);
+    try {
+      const { results, errors } = await Prices.historyMany(missing, spec.key);
+      results.forEach((h, sym) => {
+        historyCache.series[historyCacheKey(sym, spec.key)] = {
+          points: downsampleHistoryPoints(h.points),
+          fetchedAt: h.fetchedAt,
+          source: h.source
+        };
+        historyFailures.delete(historyCacheKey(sym, spec.key));
+      });
+      errors.forEach((err, sym) => {
+        historyFailures.set(historyCacheKey(sym, spec.key), { at: Date.now(), message: err && err.message || "no data" });
+      });
+      if (results.size) pruneAndWriteHistoryCache();
+    } finally {
+      if (historyFetchKey === key) historyFetchKey = null;
+    }
+    renderHistorySection();
+  }
+
+  function setHistoryStatus(text) {
+    const node = $("#history-status");
+    if (node) {
+      node.textContent = text || "";
+      node.style.display = text ? "" : "none";
+    }
+  }
+
+  function renderHistoryRangeChips(spec) {
+    const wrap = $("#history-ranges");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    Prices.HISTORY_RANGES.forEach(r => {
+      const btn = el("button", "history-range-btn", r.label);
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", String(r.key === spec.key));
+      btn.title = `Look back ${r.label}`;
+      btn.addEventListener("click", () => {
+        if (ui.historyRange === r.key) return;
+        ui.historyRange = r.key;
+        saveUiState();
+        renderHistorySection();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function fmtHistoryTime(ms, spec, withTime) {
+    const d = new Date(ms);
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const day = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    if (spec.ms <= 24 * 3600e3) return time;
+    if (spec.ms <= 14 * 86400e3) return withTime ? `${day} ${time}` : day;
+    if (spec.ms <= 400 * 86400e3) return day;
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+
+  // Catmull-Rom → cubic bezier: the single smooth line.
+  function smoothLinePath(pts) {
+    if (pts.length < 2) return "";
+    if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      d += ` C ${(p1.x + (p2.x - p0.x) / 6).toFixed(1)} ${(p1.y + (p2.y - p0.y) / 6).toFixed(1)},`
+        + ` ${(p2.x - (p3.x - p1.x) / 6).toFixed(1)} ${(p2.y - (p3.y - p1.y) / 6).toFixed(1)},`
+        + ` ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    return d;
+  }
+
+  function drawHistoryChart(container, series, spec) {
+    container.innerHTML = "";
+    const W = 1080, H = 340, padL = 76, padR = 24, padT = 18, padB = 34;
+    const iw = W - padL - padR, ih = H - padT - padB;
+    const { times, values } = series;
+    const N = values.length - 1;
+
+    let lo = Math.min(...values), hi = Math.max(...values);
+    if (!(hi > lo)) { lo -= Math.max(Math.abs(lo) * .02, 1); hi += Math.max(Math.abs(hi) * .02, 1); }
+    const pad = (hi - lo) * .08;
+    const yLo = lo - pad, yHi = hi + pad;
+    const x = i => padL + (i / N) * iw;
+    const y = v => padT + ih - ((v - yLo) / (yHi - yLo)) * ih;
+    const up = values[N] >= values[0];
+    const dir = up ? "is-up" : "is-down";
+
+    const svg = svgEl("svg", {
+      viewBox: `0 0 ${W} ${H}`, class: "chart-svg history-chart-svg", role: "img",
+      "aria-label": `Holdings value over the past ${spec.label}`
+    });
+
+    for (let i = 0; i <= 4; i++) {
+      const v = yLo + ((yHi - yLo) / 4) * i;
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: "grid-line" }));
+      const t = svgEl("text", { x: padL - 10, y: y(v) + 4, "text-anchor": "end", class: "axis-text" });
+      t.textContent = fmt$(v);
+      svg.appendChild(t);
+    }
+    for (let i = 0; i <= 4; i++) {
+      const idx = Math.round((N / 4) * i);
+      const t = svgEl("text", {
+        x: x(idx), y: H - 10, class: "axis-text",
+        "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle"
+      });
+      t.textContent = fmtHistoryTime(times[idx], spec, false);
+      svg.appendChild(t);
+    }
+
+    // Dotted reference at the range-start value — Robinhood's "prior close" cue.
+    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(values[0]), y2: y(values[0]), class: "history-baseline" }));
+
+    const pts = values.map((v, i) => ({ x: x(i), y: y(v) }));
+    const lineD = smoothLinePath(pts);
+    svg.appendChild(svgEl("path", {
+      d: `${lineD} L ${x(N).toFixed(1)} ${(padT + ih).toFixed(1)} L ${x(0).toFixed(1)} ${(padT + ih).toFixed(1)} Z`,
+      class: `history-area ${dir}`
+    }));
+    svg.appendChild(svgEl("path", { d: lineD, fill: "none", class: `history-line ${dir}` }));
+    svg.appendChild(svgEl("circle", { cx: x(N), cy: y(values[N]), r: 4, class: `history-dot ${dir}` }));
+
+    const cross = svgEl("line", { x1: 0, x2: 0, y1: padT, y2: padT + ih, class: "crosshair-line", opacity: 0 });
+    const marker = svgEl("circle", { cx: 0, cy: 0, r: 3.5, class: `history-dot ${dir}`, opacity: 0 });
+    svg.appendChild(cross);
+    svg.appendChild(marker);
+    svg.addEventListener("mousemove", e => {
+      const rect = svg.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width * W;
+      const i = Math.round(clamp((mx - padL) / iw, 0, 1) * N);
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+      cross.setAttribute("opacity", 1);
+      marker.setAttribute("cx", x(i)); marker.setAttribute("cy", y(values[i]));
+      marker.setAttribute("opacity", 1);
+      const delta = values[i] - values[0];
+      const pct = values[0] ? delta / values[0] : 0;
+      showTip(
+        `<b>${fmtHistoryTime(times[i], spec, true)}</b><br>` +
+        `<span class="tt-k">holdings</span> ${fmt$full(values[i])}<br>` +
+        `<span class="tt-k">vs start</span> ${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`,
+        e.clientX, e.clientY);
+    });
+    svg.addEventListener("mouseleave", () => {
+      cross.setAttribute("opacity", 0);
+      marker.setAttribute("opacity", 0);
+      hideTip();
+    });
+
+    container.appendChild(svg);
+  }
+
+  function renderHistoryReadout(series, spec, asOf) {
+    const wrap = $("#history-readout");
+    if (!wrap) return;
+    const { values } = series;
+    const last = values[values.length - 1];
+    const delta = last - values[0];
+    const pct = values[0] ? delta / values[0] : 0;
+    const dir = delta >= 0 ? "is-up" : "is-down";
+    const stale = Date.now() - asOf > 90e3;
+    wrap.innerHTML = `
+      <span class="history-value">${fmt$cents(last)}</span>
+      <span class="history-delta ${dir}">${delta >= 0 ? "▲" : "▼"} ${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}% <em>past ${spec.label}</em></span>
+      ${stale ? `<span class="history-asof">as of ${formatEasternTime(asOf)}</span>` : ""}`;
+  }
+
+  function renderHistorySection() {
+    const section = $("#history-section");
+    if (!section) return;
+    const holdings = Data.all().filter(isHistoryHolding);
+    if (!holdings.length) {
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "block";
+    const spec = historyRangeSpec();
+    renderHistoryRangeChips(spec);
+
+    // Assemble the coherent snapshot from cache: fixed USD is a flat $1 line,
+    // fetched series must be fresh for this range's TTL.
+    const seriesByTicker = new Map();
+    let asOf = Infinity;
+    historyTickers().forEach(sym => {
+      const entry = freshHistoryEntry(sym, spec);
+      if (!entry) return;
+      seriesByTicker.set(sym, entry.points);
+      asOf = Math.min(asOf, entry.fetchedAt);
+    });
+    if (!Number.isFinite(asOf)) asOf = Date.now();
+    holdings.forEach(inv => {
+      const sym = String(inv.Ticker || "").trim().toUpperCase();
+      if (fixedPriceForTicker(sym) != null && !seriesByTicker.has(sym)) {
+        seriesByTicker.set(sym, [[asOf - spec.ms, 1], [asOf, 1]]);
+      }
+    });
+
+    const series = Data.historyValueSeries(seriesByTicker, {
+      start: asOf - spec.ms,
+      end: asOf,
+      points: HISTORY_GRID_POINTS,
+      taxOn: ui.taxOn,
+      filter: isHistoryHolding
+    });
+
+    const chart = $("#history-chart");
+    if (!series.included.length) {
+      if (chart) chart.innerHTML = "";
+      const readout = $("#history-readout");
+      if (readout) readout.innerHTML = "";
+      setHistoryStatus(historyFetchKey ? "Loading price history…" : "No price history available yet for this range.");
+      ensureHistorySeries();
+      return;
+    }
+
+    renderHistoryReadout(series, spec, asOf);
+    drawHistoryChart(chart, series, spec);
+
+    const notes = [];
+    const excludedSyms = [...new Set(series.excluded.map(inv => String(inv.Ticker || "").trim().toUpperCase()))];
+    if (excludedSyms.length) {
+      const reasons = excludedSyms.map(sym => {
+        const failure = historyFailures.get(historyCacheKey(sym, spec.key));
+        return failure ? `${sym} (${failure.message})` : sym;
+      });
+      notes.push(`No ${spec.label} history for: ${reasons.join(", ")}`);
+    }
+    const start = asOf - spec.ms;
+    const shallow = [...seriesByTicker.entries()]
+      .filter(([sym, pts]) => seriesTickerUsed(series, sym) && pts[0][0] > start + spec.ms * .05)
+      .map(([sym]) => sym);
+    if (shallow.length) notes.push(`Held flat before first data: ${shallow.join(", ")}`);
+    if (historyFetchKey) notes.push("Loading more price history…");
+    setHistoryStatus(notes.join(" · "));
+
+    ensureHistorySeries();
+  }
+
+  function seriesTickerUsed(series, sym) {
+    return series.included.some(inv => String(inv.Ticker || "").trim().toUpperCase() === sym);
+  }
+
   function renderLeverage() {
     const wrap = $("#debt-leverage");
     if (!wrap) return;
@@ -2830,6 +3165,7 @@
       stackedArea($("#proj-chart"), proj);
     }
     renderBalanceSheet();
+    renderHistorySection();
 
     // Composition is scoped to INVESTED ASSETS so donut/bar totals equal what's
     // invested (not net worth). Debts get their own section below.
@@ -3272,6 +3608,111 @@
     return Data.parseText(text);
   }
 
+  function exportBaseName() {
+    return `coldledger-${slug(Portfolios.activeName() || "ledger") || "ledger"}`;
+  }
+
+  function downloadTextFile(text, filename, type) {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function readImportFile(accept) {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = accept;
+      input.style.position = "fixed";
+      input.style.left = "-9999px";
+      input.addEventListener("change", () => {
+        const file = input.files && input.files[0];
+        input.remove();
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(new Error("could not read selected file"));
+        reader.readAsText(file);
+      }, { once: true });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  function importLedgerRows(name, investments) {
+    Portfolios.importCopy(name, investments);
+    resetContributionState();
+    resetFloatPositionState();
+    saveUiState();
+    renderAll();
+    toast(`Imported ${Data.all().length} positions into "${Portfolios.activeName()}"`);
+  }
+
+  async function exportLedger(format) {
+    if (format === "clipboard") {
+      const backup = Data.toJSON();
+      await writeClipboardText(backup);
+      toast("Backup copied to clipboard");
+      return;
+    }
+
+    const base = exportBaseName();
+    if (format === "csv") {
+      downloadTextFile(Data.toCSV(), `${base}.csv`, "text/csv;charset=utf-8");
+      toast("CSV exported");
+      return;
+    }
+    if (format === "md") {
+      downloadTextFile(Data.toMarkdown(), `${base}.md`, "text/markdown;charset=utf-8");
+      toast("Markdown exported");
+    }
+  }
+
+  async function importLedger(format) {
+    if (!canCreateLedger()) {
+      toast(ledgerLimitMessage());
+      return;
+    }
+
+    if (format === "clipboard") {
+      const investments = parseClipboardBackup(await readClipboardText());
+      importLedgerRows("Imported from clipboard", investments);
+      return;
+    }
+
+    const specs = {
+      csv: {
+        accept: ".csv,text/csv",
+        parse: Data.parseCSV,
+        name: "Imported from CSV",
+        empty: "selected CSV is empty"
+      },
+      md: {
+        accept: ".md,.markdown,text/markdown,text/plain",
+        parse: Data.parseMarkdown,
+        name: "Imported from Markdown",
+        empty: "selected Markdown file is empty"
+      }
+    };
+    const spec = specs[format];
+    if (!spec) return;
+
+    const text = await readImportFile(spec.accept);
+    if (text == null) return;
+    if (!text.trim()) throw new Error(spec.empty);
+    importLedgerRows(spec.name, spec.parse(text));
+  }
+
   // Re-price every auto-priced holding: fixed-price tickers like USD plus
   // positions that look like securities (see looksTradable). Call-signs like
   // HOUSE/DEBT and cash/loans keep their manual value.
@@ -3339,43 +3780,91 @@
   }
 
   function wireIO() {
-    $("#copy-json").addEventListener("click", async () => {
-      const backup = Data.toJSON();
-      try {
-        await writeClipboardText(backup);
-        toast("Backup copied to clipboard");
-      } catch (err) {
-        toast("Couldn't copy backup: " + err.message);
-      }
+    const menus = [
+      { toggle: $("#import-menu-toggle"), menu: $("#import-menu") },
+      { toggle: $("#copy-json"), menu: $("#export-menu") }
+    ].filter(pair => pair.toggle && pair.menu);
+
+    const closeMenus = focusToggle => {
+      menus.forEach(({ toggle, menu }) => {
+        const wasOpen = toggle.getAttribute("aria-expanded") === "true";
+        menu.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+        if (focusToggle && wasOpen) toggle.focus();
+      });
+    };
+    const openMenu = pair => {
+      closeMenus(false);
+      pair.menu.hidden = false;
+      pair.toggle.setAttribute("aria-expanded", "true");
+      const first = pair.menu.querySelector("button");
+      if (first) first.focus();
+    };
+
+    menus.forEach(pair => {
+      pair.toggle.addEventListener("click", e => {
+        e.stopPropagation();
+        if (pair.toggle.getAttribute("aria-expanded") === "true") closeMenus(false);
+        else openMenu(pair);
+      });
+      pair.toggle.addEventListener("keydown", e => {
+        if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openMenu(pair);
+        }
+      });
+      pair.menu.addEventListener("keydown", e => {
+        const items = [...pair.menu.querySelectorAll("button")];
+        const idx = items.indexOf(document.activeElement);
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeMenus(true);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          items[(idx + 1) % items.length].focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          items[(idx - 1 + items.length) % items.length].focus();
+        }
+      });
+    });
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".io-menu-wrap")) closeMenus(false);
+    });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") closeMenus(false);
     });
 
-    document.querySelectorAll(".load-json").forEach(b => b.addEventListener("click", async e => {
-      if (!canCreateLedger()) {
-        toast(ledgerLimitMessage());
-        return;
-      }
-      const btn = e.currentTarget;
-      const label = btn.getAttribute("aria-label") || "Import from clipboard";
-      const title = btn.title;
-      btn.disabled = true;
-      btn.classList.add("is-busy");
-      btn.setAttribute("aria-label", "Reading clipboard import");
-      btn.title = "Reading clipboard import";
+    document.querySelectorAll("[data-export-format]").forEach(btn => btn.addEventListener("click", async e => {
+      const format = e.currentTarget.dataset.exportFormat;
+      closeMenus(false);
       try {
-        const investments = parseClipboardBackup(await readClipboardText());
-        Portfolios.importCopy("Imported from clipboard", investments);
-        resetContributionState();
-        resetFloatPositionState();
-        saveUiState();
-        renderAll();
-        toast(`Imported ${Data.all().length} positions into "${Portfolios.activeName()}"`);
+        await exportLedger(format);
       } catch (err) {
-        toast("Clipboard import failed: " + err.message);
+        toast(format === "clipboard" ? "Couldn't copy backup: " + err.message : "Export failed: " + err.message);
+      }
+    }));
+
+    document.querySelectorAll("[data-import-format]").forEach(btn => btn.addEventListener("click", async e => {
+      const format = e.currentTarget.dataset.importFormat;
+      const toggle = $("#import-menu-toggle");
+      const label = toggle.getAttribute("aria-label") || "Import ledger data";
+      const title = toggle.title;
+      closeMenus(false);
+      toggle.disabled = true;
+      toggle.classList.add("is-busy");
+      toggle.setAttribute("aria-label", "Importing ledger data");
+      toggle.title = "Importing ledger data";
+      try {
+        await importLedger(format);
+      } catch (err) {
+        const prefix = format === "clipboard" ? "Clipboard import failed: " : format === "csv" ? "CSV import failed: " : "Markdown import failed: ";
+        toast(prefix + err.message);
       } finally {
-        btn.disabled = false;
-        btn.classList.remove("is-busy");
-        btn.setAttribute("aria-label", label);
-        btn.title = title;
+        toggle.disabled = false;
+        toggle.classList.remove("is-busy");
+        toggle.setAttribute("aria-label", label);
+        toggle.title = title;
       }
     }));
 

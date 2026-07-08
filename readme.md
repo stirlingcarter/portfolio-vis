@@ -11,13 +11,13 @@ Open `index.html` directly in a browser. The app runs entirely from relative
 files, so this has the same runtime behavior as serving the folder, with one
 browser restriction: the first-run automatic fetch of adjacent `tickers.json` is
 blocked under `file://` in many browsers. In that case the app starts empty; use
-**Load sample portfolio** or **Import** from clipboard where the browser permits
+**Load sample portfolio** or **Import -> Clipboard** where the browser permits
 clipboard reads.
 
 Saved portfolios are stored in browser `localStorage`, which is scoped to the
 current origin. A portfolio saved while opening `file://.../index.html` will not
-automatically appear at the GitHub Pages URL; use **Export** and **Import** from
-clipboard to move data between them.
+automatically appear at the GitHub Pages URL; use the top **Export** and
+**Import** menus to move data between them.
 
 ### GitHub Pages
 
@@ -155,15 +155,17 @@ automatically on return. It holds many named **copies** (portfolios), one active
   fetching an adjacent `tickers.json` (works over HTTP; under `file://` the fetch
   is blocked and it starts empty). After that, localStorage is the source of
   truth and `tickers.json` is just an import/export convenience.
-- **Import / export stays manual too:** **Export** serializes the active copy's
-  positions to the clipboard as the ordered JSON array above; **Import** reads
-  that clipboard JSON and creates a new active portfolio copy named "Imported
-  from clipboard" (with a numeric suffix if needed). The payload is positions
-  only; projection controls and exact contribution chip state stay in
-  `coldledger.ui.v1` and reset for imported copies. IDs are normalized to be
-  unique on every load (`normalizeIds` in `data.js`) — hand-edited/merged JSON
-  with duplicate or missing IDs is repaired so ledger row identity
-  (edit/remove) stays sound.
+- **Import / export stays manual too:** the top **Export** menu offers
+  **Clipboard**, **CSV**, and **Markdown**. Clipboard preserves the original
+  ordered JSON array backup behavior. CSV (`.csv`) and Markdown (`.md`) export
+  the same ledger fields in `Data.FIELD_ORDER`, without UI preferences,
+  historical price caches, or other presentation state. The top **Import** menu
+  accepts the same three formats and creates a new active portfolio copy named
+  for the source (with a numeric suffix if needed). Projection controls and exact
+  contribution chip state stay in `coldledger.ui.v1` and reset for imported
+  copies. IDs are normalized to be unique on every load (`normalizeIds` in
+  `data.js`) — hand-edited/merged imports with duplicate or missing IDs are
+  repaired so ledger row identity (edit/remove) stays sound.
 
 ## Projection math (`Data.projection`)
 
@@ -237,6 +239,45 @@ returns a `Map` of only what resolved (never throws). In the UI: the add form's
 **Refresh prices** available and the app also attempts a throttled refresh after
 page load. Both paths re-price every holding (`Value = shares × price`), leaving
 unresolvable tickers (cash, loans, unknown symbols) for manual entry.
+
+## Holdings history (look-back chart)
+
+The **Holdings history** section is a Robinhood-style single smooth line of the
+current auto-priced asset holdings valued at *past* prices: for each look-back
+range (1H · 24H · 3D · 1W · 2W · 1M · 1Y · 5Y · 10Y · 20Y) it sums
+`current shares × price(t)` per ticker on a shared time grid. It is a
+hypothetical ("what these holdings were worth"), not an account statement —
+past buys/sells are not modeled, and only holdings that pass `looksTradable`
+(plus fixed `USD`, which resolves as a flat `$1` line) participate. Debts are
+never included. The post-tax toggle scales each lot by its own tax rate, so
+the line's right edge matches the invested-assets total.
+
+Data comes from the same two keyless sources as live pricing, one request per
+ticker per range (`Prices.history` / `Prices.historyMany`,
+specs in `Prices.HISTORY_RANGES`):
+
+- **Stocks / ETFs** → Yahoo `v8/finance/chart` with an interval/range pair per
+  look-back (e.g. `2m/1d` for 1H, `1wk/5y` for 5Y), through the same CORS-proxy
+  fallback chain. Yahoo publishes **no official rate limit** and 429s
+  aggressive callers, so the UI keeps request counts minimal and cached.
+- **Crypto** → CoinGecko `market_chart`. The keyless tier is hard-capped at
+  **365 days of history**, so crypto series beyond 1Y throw locally (no
+  request) and those holdings are listed as excluded for 5Y/10Y/20Y.
+- Rate-limit posture: CoinGecko's keyless tier is IP-rate-limited (Demo-key
+  tier is 100 req/min); Yahoo is unofficial with no published RL. Fetches are
+  one-per-ticker-per-range, crypto requests go sequentially, and failures are
+  not retried for 10 minutes.
+
+Series are cached per `(ticker, range)` in localStorage
+(`coldledger.history.v1`, downsampled to ≤160 points, pruned to 120 entries /
+14 days) with a per-range TTL (3 min for 1H up to days for 5Y+). **Phase
+coherence:** the chart's "now" is the *oldest* `fetchedAt` among the series in
+use, so every rendered point comes from one coherent snapshot that shifts
+together as a phase behind the wall clock (labelled "as of …" when > 90s old),
+instead of every ticker being refetched to exact-Now. Data math lives in
+`Data.historyValueSeries` (step interpolation, flat-extended edges); rendering
+and the cache live in `ui.js`; smoke coverage in `history-smoke.js`
+(`node history-smoke.js`).
 
 ## Net worth vs. invested assets
 

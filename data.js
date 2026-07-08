@@ -348,6 +348,183 @@ const Data = (() => {
     return JSON.stringify(out, null, 2);
   }
 
+  function orderedRows() {
+    return investments.map(inv => {
+      const o = {};
+      FIELD_ORDER.forEach(k => { o[k] = inv[k]; });
+      return o;
+    });
+  }
+
+  function csvCell(value) {
+    const text = value == null ? "" : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function toCSV() {
+    const lines = [
+      FIELD_ORDER.map(csvCell).join(","),
+      ...orderedRows().map(row => FIELD_ORDER.map(field => csvCell(row[field])).join(","))
+    ];
+    return lines.join("\n") + "\n";
+  }
+
+  function parseCSVRows(text) {
+    const input = cleanClipboardEdges(text);
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let inQuotes = false;
+    let quoteClosed = false;
+
+    const pushCell = () => {
+      row.push(cell);
+      cell = "";
+      quoteClosed = false;
+    };
+    const pushRow = () => {
+      pushCell();
+      rows.push(row);
+      row = [];
+    };
+
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (input[i + 1] === '"') {
+            cell += '"';
+            i++;
+          } else {
+            inQuotes = false;
+            quoteClosed = true;
+          }
+        } else {
+          cell += ch;
+        }
+        continue;
+      }
+
+      if (quoteClosed && ch !== "," && ch !== "\n" && ch !== "\r") {
+        if (/\s/.test(ch)) continue;
+        throw new Error(`invalid CSV quote at row ${rows.length + 1}`);
+      }
+      if (ch === '"') {
+        if (cell !== "") throw new Error(`invalid CSV quote at row ${rows.length + 1}`);
+        inQuotes = true;
+      } else if (ch === ",") {
+        pushCell();
+      } else if (ch === "\n") {
+        pushRow();
+      } else if (ch === "\r") {
+        if (input[i + 1] === "\n") i++;
+        pushRow();
+      } else {
+        cell += ch;
+      }
+    }
+
+    if (inQuotes) throw new Error("unterminated quoted CSV field");
+    if (cell !== "" || row.length > 0 || input.endsWith(",")) pushRow();
+    return rows.filter(r => r.some(c => String(c).trim() !== ""));
+  }
+
+  function canonicalField(header) {
+    const name = String(header ?? "").replace(/^\uFEFF/, "").trim().toLowerCase();
+    return FIELD_ORDER.find(field => field.toLowerCase() === name) || null;
+  }
+
+  function rowsFromDelimited(headers, bodyRows, label) {
+    const fields = headers.map(canonicalField);
+    if (!fields.some(Boolean)) throw new Error(`${label} header does not contain ledger fields.`);
+    if (!fields.includes("Ticker")) throw new Error(`${label} header must include Ticker.`);
+
+    const rows = [];
+    bodyRows.forEach((cells, idx) => {
+      if (!cells.some(c => String(c).trim() !== "")) return;
+      const row = {};
+      fields.forEach((field, col) => {
+        if (field) row[field] = cells[col] == null ? "" : cells[col];
+      });
+      if (!String(row.Ticker ?? "").trim()) throw new Error(`${label} row ${idx + 2} is missing Ticker.`);
+      rows.push(row);
+    });
+    return rows;
+  }
+
+  function parseCSV(text) {
+    const rows = parseCSVRows(text);
+    if (rows.length === 0) return [];
+    return rowsFromDelimited(rows[0], rows.slice(1), "CSV");
+  }
+
+  function markdownCell(value) {
+    return (value == null ? "" : String(value))
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .replace(/\r\n?/g, "\n")
+      .replace(/\n/g, "<br>");
+  }
+
+  function toMarkdown() {
+    const header = `| ${FIELD_ORDER.map(markdownCell).join(" | ")} |`;
+    const divider = `| ${FIELD_ORDER.map(() => "---").join(" | ")} |`;
+    const rows = orderedRows().map(row => `| ${FIELD_ORDER.map(field => markdownCell(row[field])).join(" | ")} |`);
+    return ["# ColdData Ledger Export", "", header, divider, ...rows, ""].join("\n");
+  }
+
+  function splitMarkdownRow(line) {
+    let text = String(line ?? "").trim();
+    if (text.startsWith("|")) text = text.slice(1);
+    if (text.endsWith("|")) text = text.slice(0, -1);
+
+    const cells = [];
+    let cell = "";
+    let escaped = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (escaped) {
+        cell += ch;
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "|") {
+        cells.push(cell.trim().replace(/<br\s*\/?>/gi, "\n"));
+        cell = "";
+      } else {
+        cell += ch;
+      }
+    }
+    if (escaped) cell += "\\";
+    cells.push(cell.trim().replace(/<br\s*\/?>/gi, "\n"));
+    return cells;
+  }
+
+  function isMarkdownDivider(cells) {
+    return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(String(cell).trim()));
+  }
+
+  function parseMarkdown(text) {
+    const lines = cleanClipboardEdges(text).split("\n");
+    for (let i = 0; i < lines.length - 1; i++) {
+      const headerLine = lines[i].trim();
+      const dividerLine = lines[i + 1].trim();
+      if (!headerLine.includes("|") || !dividerLine.includes("|")) continue;
+      const headers = splitMarkdownRow(headerLine);
+      const divider = splitMarkdownRow(dividerLine);
+      if (!isMarkdownDivider(divider)) continue;
+
+      const body = [];
+      for (let j = i + 2; j < lines.length; j++) {
+        const line = lines[j].trim();
+        if (!line || !line.includes("|")) break;
+        body.push(splitMarkdownRow(line));
+      }
+      return rowsFromDelimited(headers, body, "Markdown");
+    }
+    throw new Error("Markdown import expects a table exported by ColdData Ledger.");
+  }
+
   /* ---------- derivations ---------- */
 
   // Effective withdrawal tax as a number. "" (or non-numeric) means the tax
@@ -664,7 +841,7 @@ const Data = (() => {
 
   return {
     FIELD_ORDER, DEFAULTS, KINDS, SUGGESTIONS, TAG_DIMENSIONS, LEVERAGE_LEVELS,
-    subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON,
+    subscribe, add, remove, update, all, loadArray, parseText, loadText, toJSON, toCSV, parseCSV, toMarkdown, parseMarkdown,
     presentValue, netValue, taxRate, pricePerShare, inferAmortPayment, isAmortized, isAsset, isDebt,
     total, assetTotal, debtTotal, leverage, debtWeightedRate, weightedRate, groupBy, crossTab, aggregateProjection, projection,
     historyValueSeries

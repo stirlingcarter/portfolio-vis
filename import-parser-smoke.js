@@ -51,4 +51,50 @@ assert.throws(
   err => err.message.includes("Received") && err.message.includes("sanitized")
 );
 
-console.log(`ok - ${cases.length} import parser cases`);
+const specialRow = {
+  ...row,
+  "Institution": 'Brokerage, "Main"',
+  "Category": "Stock|ETF",
+  "Subcategory": "Growth\nStocks",
+  "Nominal tax rate": "",
+  "Amort Months": "",
+  "Amort Payment": ""
+};
+
+sandbox.Data.loadArray([specialRow]);
+
+const csv = sandbox.Data.toCSV();
+assert.match(csv, /^ID,Ticker,Institution,Account Type,Amount,Value,Kind,Category,Subcategory,Nominal Rate,Nominal tax rate,Amort Months,Amort Payment\n/);
+assert.match(csv, /"Brokerage, ""Main"""/, "CSV escapes commas and quotes");
+assert.doesNotMatch(csv, /coldledger\.ui|theme|privacy|history/i, "CSV stays ledger-only");
+
+const csvParsed = sandbox.Data.parseCSV(csv);
+assert.equal(csvParsed.length, 1);
+assert.equal(csvParsed[0].Institution, 'Brokerage, "Main"');
+assert.equal(csvParsed[0].Category, "Stock|ETF");
+assert.equal(csvParsed[0].Subcategory, "Growth\nStocks");
+sandbox.Data.loadArray(csvParsed);
+assert.equal(sandbox.Data.all()[0].Amount, 82, "CSV imports normalize numbers through Data.loadArray");
+assert.equal(sandbox.Data.all()[0]["Nominal tax rate"], "", "CSV preserves blank optional tax");
+
+const markdown = sandbox.Data.toMarkdown();
+assert.match(markdown, /^# ColdData Ledger Export\n\n\| ID \| Ticker \|/);
+assert.match(markdown, /Stock\\\|ETF/, "Markdown escapes pipe characters");
+assert.match(markdown, /Growth<br>Stocks/, "Markdown keeps table rows single-line");
+assert.doesNotMatch(markdown, /coldledger\.ui|theme|privacy|history/i, "Markdown stays ledger-only");
+
+const markdownParsed = sandbox.Data.parseMarkdown(markdown);
+assert.equal(markdownParsed.length, 1);
+assert.equal(markdownParsed[0].Category, "Stock|ETF");
+assert.equal(markdownParsed[0].Subcategory, "Growth\nStocks");
+
+assert.throws(
+  () => sandbox.Data.parseCSV('Ticker,Amount\n"QQQ,82'),
+  /unterminated quoted CSV field/
+);
+assert.throws(
+  () => sandbox.Data.parseMarkdown("not a ledger table"),
+  /Markdown import expects a table/
+);
+
+console.log(`ok - ${cases.length} clipboard parser cases plus CSV/Markdown`);

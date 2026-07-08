@@ -36,20 +36,34 @@ try {
             <path class="privacy-slash" d="M5 19 19 5"/>
           </svg>
         </button>
-        <button class="ledger-icon-button load-json" type="button" title="Import exported JSON from the clipboard" aria-label="Import from clipboard">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 3v11"/>
-            <path d="m7 9 5 5 5-5"/>
-            <path d="M5 17v2.5h14V17"/>
-          </svg>
-        </button>
-        <button id="copy-json" class="ledger-icon-button" type="button" title="Export backup to the clipboard" aria-label="Export to clipboard">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 14V3"/>
-            <path d="m7 8 5-5 5 5"/>
-            <path d="M5 17v2.5h14V17"/>
-          </svg>
-        </button>
+        <div class="io-menu-wrap">
+          <button id="import-menu-toggle" class="ledger-icon-button load-json" type="button" title="Import ledger data" aria-label="Import ledger data" aria-haspopup="menu" aria-controls="import-menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 3v11"/>
+              <path d="m7 9 5 5 5-5"/>
+              <path d="M5 17v2.5h14V17"/>
+            </svg>
+          </button>
+          <div id="import-menu" class="io-menu" role="menu" aria-label="Import options" hidden>
+            <button type="button" role="menuitem" data-import-format="clipboard">Clipboard</button>
+            <button type="button" role="menuitem" data-import-format="csv">CSV</button>
+            <button type="button" role="menuitem" data-import-format="md">Markdown</button>
+          </div>
+        </div>
+        <div class="io-menu-wrap">
+          <button id="copy-json" class="ledger-icon-button" type="button" title="Export ledger data" aria-label="Export ledger data" aria-haspopup="menu" aria-controls="export-menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 14V3"/>
+              <path d="m7 8 5-5 5 5"/>
+              <path d="M5 17v2.5h14V17"/>
+            </svg>
+          </button>
+          <div id="export-menu" class="io-menu" role="menu" aria-label="Export options" hidden>
+            <button type="button" role="menuitem" data-export-format="clipboard">Clipboard</button>
+            <button type="button" role="menuitem" data-export-format="csv">CSV</button>
+            <button type="button" role="menuitem" data-export-format="md">Markdown</button>
+          </div>
+        </div>
         <button id="refresh-prices" class="ledger-icon-button" type="button" title="Refresh live prices" aria-label="Refresh live prices">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M20 6v5h-5"/>

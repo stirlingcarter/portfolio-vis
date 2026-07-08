@@ -1,0 +1,129 @@
+const assert = require("node:assert/strict");
+// vm sandboxes have their own Array intrinsics; JSON-normalize before deepEqual.
+const plain = v => JSON.parse(JSON.stringify(v));
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const dataSource = fs.readFileSync(path.join(__dirname, "data.js"), "utf8");
+const pricesSource = fs.readFileSync(path.join(__dirname, "prices.js"), "utf8");
+const uiSource = fs.readFileSync(path.join(__dirname, "ui.js"), "utf8");
+const indexSource = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+
+/* ---------- static wiring ---------- */
+
+assert.match(indexSource, /id="history-section"/, "holdings-history section exists");
+assert.match(indexSource, /id="history-ranges"/, "range selector container exists");
+assert.match(uiSource, /renderHistorySection\(\);/, "renderAll draws the history section");
+assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own storage key");
+assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
+
+/* ---------- Prices.history (no network for USD; parsing via stubbed fetch) ---------- */
+
+const HOUR = 3600e3;
+const nowSec = Math.floor(Date.now() / 1000);
+
+function fakeFetch(url) {
+  const body = url.includes("query1.finance.yahoo.com")
+    ? JSON.stringify({
+        chart: { result: [{
+          meta: { currency: "USD", regularMarketPrice: 110, regularMarketTime: nowSec },
+          timestamp: [nowSec - 7200, nowSec - 3600, nowSec - 1800],
+          indicators: { quote: [{ close: [100, null, 105] }] }
+        }] }
+      })
+    : JSON.stringify({
+        prices: [[Date.now() - 2 * HOUR, 50000], [Date.now() - HOUR, 51000], [Date.now(), 52000]]
+      });
+  return Promise.resolve({ ok: true, text: async () => body });
+}
+
+const priceSandbox = {
+  fetch: fakeFetch,
+  AbortController,
+  setTimeout,
+  clearTimeout,
+  Date, Math, JSON, Number, String, Array, Object, Set, Map, Promise, Error, isFinite, encodeURIComponent, console
+};
+vm.runInNewContext(`${pricesSource}\nglobalThis.Prices = Prices;`, priceSandbox, { filename: "prices.js" });
+const { Prices } = priceSandbox;
+
+const RANGE_KEYS = ["1h", "24h", "3d", "1w", "2w", "1m", "1y", "5y", "10y", "20y"];
+assert.deepEqual(plain(Prices.HISTORY_RANGES.map(r => r.key)), RANGE_KEYS, "all ten look-back ranges are published");
+Prices.HISTORY_RANGES.forEach(r => {
+  assert.ok(r.ms > 0 && r.ttlMs > 0 && r.yahoo && r.yahoo.range && r.yahoo.interval, `range ${r.key} is fully specified`);
+});
+const beyondCoinGecko = Prices.HISTORY_RANGES.filter(r => r.coingeckoDays === null).map(r => r.key);
+assert.deepEqual(plain(beyondCoinGecko), ["5y", "10y", "20y"], "crypto history stops at the CoinGecko 365-day free cap");
+
+async function historySmoke() {
+  const usd = await Prices.history("USD", "1h");
+  assert.equal(usd.source, "Fixed USD", "USD resolves locally");
+  assert.ok(usd.points.every(p => p[1] === 1), "USD history is flat $1");
+
+  const stock = await Prices.history("QQQ", "1w");
+  assert.equal(stock.source, "Yahoo Finance");
+  assert.deepEqual(plain(stock.points.map(p => p[1])), [100, 105, 110], "null candles dropped, live price appended");
+
+  const coin = await Prices.history("BTC", "24h");
+  assert.equal(coin.source, "CoinGecko");
+  assert.equal(coin.points.length, 3, "CoinGecko prices parsed");
+
+  await assert.rejects(() => Prices.history("BTC", "5y"), /1y look-back/, "crypto beyond 365d throws without a network call");
+
+  const many = await Prices.historyMany(["USD", "QQQ", "BTC"], "24h");
+  assert.deepEqual([...many.results.keys()].sort(), ["BTC", "QQQ", "USD"], "historyMany resolves each ticker once");
+  assert.equal(many.errors.size, 0, "no errors for supported tickers");
+
+  const mixed = await Prices.historyMany(["BTC", "ETH"], "5y");
+  assert.equal(mixed.results.size, 0, "unsupported crypto ranges resolve nothing");
+  assert.equal(mixed.errors.size, 2, "each unsupported ticker reports its error");
+}
+
+/* ---------- Data.historyValueSeries ---------- */
+
+const dataSandbox = {};
+vm.runInNewContext(`${dataSource}\nglobalThis.Data = Data;`, dataSandbox, { filename: "data.js" });
+const { Data } = dataSandbox;
+
+const T0 = 1000e3;
+Data.loadArray([
+  { "ID": 1, "Ticker": "QQQ", "Institution": "RH", "Account Type": "Brokerage", "Kind": "Asset", "Amount": 2, "Value": 1000, "Category": "Stock", "Subcategory": "", "Nominal Rate": 0.08, "Nominal tax rate": 0.5 },
+  { "ID": 2, "Ticker": "QQQ", "Institution": "RH", "Account Type": "Roth IRA", "Kind": "Asset", "Amount": 1, "Value": 500, "Category": "Stock", "Subcategory": "", "Nominal Rate": 0.08, "Nominal tax rate": 0 },
+  { "ID": 3, "Ticker": "USD", "Institution": "Chase", "Account Type": "Checking", "Kind": "Asset", "Amount": 100, "Value": 100, "Category": "Cash", "Subcategory": "", "Nominal Rate": 0, "Nominal tax rate": "" },
+  { "ID": 4, "Ticker": "MYSTERY", "Institution": "RH", "Account Type": "Brokerage", "Kind": "Asset", "Amount": 1, "Value": 42, "Category": "Stock", "Subcategory": "", "Nominal Rate": 0.08, "Nominal tax rate": "" },
+  { "ID": 5, "Ticker": "LOAN", "Institution": "Bank", "Account Type": "Loan", "Kind": "Debt", "Amount": 1, "Value": 999, "Category": "Loan", "Subcategory": "", "Nominal Rate": 0, "Nominal tax rate": "" }
+]);
+
+const seriesByTicker = new Map([
+  ["QQQ", [[T0, 100], [T0 + 2 * HOUR, 120]]],
+  ["USD", [[T0, 1], [T0 + 2 * HOUR, 1]]]
+]);
+const isAssetWithSeriesOrUsd = inv => Data.isAsset(inv);
+
+const out = Data.historyValueSeries(seriesByTicker, {
+  start: T0, end: T0 + 2 * HOUR, points: 3, taxOn: false, filter: isAssetWithSeriesOrUsd
+});
+assert.deepEqual(plain(out.times), [T0, T0 + HOUR, T0 + 2 * HOUR], "grid spans start→end inclusive");
+// 3 QQQ shares × price + 100 USD × $1; step interpolation holds 100 until the 120 print.
+assert.deepEqual(plain(out.values), [400, 400, 460], "value = current shares × past price, step-interpolated");
+assert.equal(out.included.length, 3, "both QQQ lots and USD are included");
+assert.deepEqual(plain(out.excluded.map(i => i.Ticker)), ["MYSTERY"], "holdings without a series are excluded, debts filtered out");
+
+const taxed = Data.historyValueSeries(seriesByTicker, {
+  start: T0, end: T0 + 2 * HOUR, points: 2, taxOn: true, filter: isAssetWithSeriesOrUsd
+});
+// Post-tax: lot 1 (2 sh, 50% tax) counts as 1 share; lot 2 unchanged; USD untaxed ("").
+assert.deepEqual(plain(taxed.values), [300, 340], "post-tax history scales each lot by its own tax rate");
+
+const flat = Data.historyValueSeries(seriesByTicker, {
+  start: T0 - 4 * HOUR, end: T0 - 3 * HOUR, points: 2, taxOn: false, filter: isAssetWithSeriesOrUsd
+});
+assert.deepEqual(plain(flat.values), [400, 400], "times before the first print flat-extend the earliest price");
+
+historySmoke()
+  .then(() => console.log("ok - holdings history ranges, price parsing, and value series"))
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  });

@@ -202,6 +202,50 @@ header {
   display: flex; align-items: center; justify-content: flex-end;
   gap: 8px; flex-wrap: nowrap;
 }
+.io-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.io-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 90;
+  min-width: 154px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.035)),
+    color-mix(in srgb, var(--panel-solid) 92%, transparent);
+  box-shadow: 0 18px 52px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.1);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+.io-menu[hidden] {
+  display: none;
+}
+.io-menu button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-color: transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--ink);
+  font-size: .68rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+.io-menu button:hover,
+.io-menu button:focus-visible {
+  color: var(--mint);
+  background: color-mix(in srgb, var(--mint) 12%, transparent);
+  border-color: color-mix(in srgb, var(--mint) 28%, transparent);
+  box-shadow: none;
+  filter: none;
+}
 body.header-actions-overlay .header-actions {
   position: fixed;
   top: 12px;
@@ -1000,6 +1044,50 @@ input[type="range"]::-moz-range-thumb {
   text-transform: uppercase;
   color: var(--faint);
 }
+
+/* ---------- holdings history ---------- */
+
+.history-head-controls { flex-wrap: wrap; justify-content: flex-end; }
+.history-ranges {
+  display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--track);
+}
+.history-range-btn {
+  padding: 5px 9px; font-family: var(--mono); font-size: .64rem;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); background: transparent; border-color: transparent;
+  border-radius: 999px;
+}
+.history-range-btn[aria-pressed="true"] {
+  color: #17130a; background: linear-gradient(135deg, var(--asset-bright), var(--coin));
+  border-color: color-mix(in srgb, var(--ink) 32%, transparent); font-weight: 700;
+}
+.history-readout {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px;
+  margin-bottom: 10px; font-family: var(--mono);
+}
+.history-readout .history-value { font-size: 1.4rem; font-weight: 500; color: var(--ink); }
+.history-readout .history-delta { font-size: .78rem; }
+.history-readout .history-delta em { font-style: normal; color: var(--faint); }
+.history-readout .history-delta.is-up { color: var(--asset-bright); }
+.history-readout .history-delta.is-down { color: var(--danger); }
+.history-readout .history-asof {
+  font-size: .64rem; color: var(--faint); letter-spacing: .08em; text-transform: uppercase;
+}
+.history-baseline { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 5; stroke-opacity: .8; }
+.history-line { stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.history-line.is-up { stroke: var(--asset-bright); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--asset) 45%, transparent)); }
+.history-line.is-down { stroke: var(--danger); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--danger) 40%, transparent)); }
+.history-area { stroke: none; }
+.history-area.is-up { fill: color-mix(in srgb, var(--asset) 14%, transparent); }
+.history-area.is-down { fill: color-mix(in srgb, var(--danger) 12%, transparent); }
+.history-dot.is-up { fill: var(--asset-bright); stroke: var(--canvas); stroke-width: 2; }
+.history-dot.is-down { fill: var(--danger); stroke: var(--canvas); stroke-width: 2; }
+.history-status {
+  margin-top: 10px; font-family: var(--mono); font-size: .68rem; color: var(--faint);
+}
+.history-status:empty { display: none; }
 
 /* ---------- donut grid ---------- */
 
