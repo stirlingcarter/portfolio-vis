@@ -60,6 +60,9 @@
   const dimLabel = dim => DIM_LABELS[dim] || dim;
   // Dimensions for the invested-assets donuts (Kind is omitted — all assets).
   const ASSET_DIMS = ["Institution", "Account Type", "Category", "Subcategory", "Ticker"];
+  const LEDGER_UNGROUPED = "__ungrouped__";
+  // Table grouping follows the ledger's tag-like schema fields.
+  const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
   const fixedPriceForTicker = ticker => String(ticker || "").trim().toUpperCase() === "USD" ? 1 : null;
@@ -92,8 +95,7 @@
     floatPositions: new Map(), // saved free-floating terrarium positions by holding ID
     editingId: null,        // ledger row currently being edited in place (or null)
     ledgerSort: "ID",
-    ledgerSortDir: "asc",
-    ledgerByInstitution: false,
+    ledgerGroupBy: "Institution",
     lastPriceRefreshAt: 0
   };
 
@@ -162,6 +164,11 @@
 
   function coerceProjectionControlsOpen(value) {
     return value === true;
+  }
+
+  function coerceLedgerGroupBy(value) {
+    if (value === LEDGER_UNGROUPED) return LEDGER_UNGROUPED;
+    return LEDGER_GROUP_DIMS.includes(value) ? value : "Institution";
   }
 
   function nextBiomeModeKey(key) {
@@ -993,6 +1000,7 @@
   /* ---------- spatial 2026 visualizations ---------- */
 
   const cleanTag = v => String(v || "—").trim() || "—";
+  const ledgerGroupLabel = v => String(v ?? "").trim() || "Unlabeled";
   const invMagnitude = inv => Data.presentValue(inv, ui.taxOn);
   const terrariumCategory = inv => cleanTag(inv.Category).toLowerCase();
   const terrariumSubcategory = inv => cleanTag(inv.Subcategory).toLowerCase();
@@ -1465,14 +1473,13 @@
   }
 
   function sortedLedgerRows(rows) {
-    const dir = ui.ledgerSortDir === "desc" ? -1 : 1;
     return rows.slice().sort((a, b) => {
       const av = ledgerSortValue(a), bv = ledgerSortValue(b);
       let cmp = typeof av === "number" && typeof bv === "number"
         ? av - bv
         : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
       if (cmp === 0) cmp = Number(a.ID) - Number(b.ID);
-      return cmp * dir;
+      return cmp;
     });
   }
 
@@ -1490,23 +1497,43 @@
     return scroll;
   }
 
-  function renderGroupedLedger(wrap, rows) {
+  function ledgerSummary(rows) {
+    return rows.reduce((summary, inv) => {
+      const value = Math.abs(Number(Data.presentValue(inv, false)) || 0);
+      if (Data.isDebt(inv)) summary.debts += value;
+      else summary.assets += value;
+      return summary;
+    }, { assets: 0, debts: 0 });
+  }
+
+  function ledgerSummaryText(rows) {
+    const { assets, debts } = ledgerSummary(rows);
+    const net = assets - debts;
+    const count = rows.length;
+    return `Assets ${fmt$full(assets)} · Debts ${fmt$full(debts)} · Net ${fmt$full(net)} · ${count} position${count === 1 ? "" : "s"}`;
+  }
+
+  function ledgerGroupBlock(label, rows) {
+    const group = el("div", "ledger-group");
+    const head = el("div", "ledger-group-head");
+    head.appendChild(el("h3", null, label));
+    head.appendChild(el("span", null, ledgerSummaryText(rows)));
+    group.appendChild(head);
+    group.appendChild(ledgerTable(sortedLedgerRows(rows)));
+    return group;
+  }
+
+  function renderGroupedLedger(wrap, rows, dimension) {
+    const groupBy = coerceLedgerGroupBy(dimension);
     const groups = new Map();
     rows.forEach(inv => {
-      const institution = cleanTag(inv.Institution);
-      if (!groups.has(institution)) groups.set(institution, []);
-      groups.get(institution).push(inv);
+      const label = ledgerGroupLabel(inv[groupBy]);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(inv);
     });
-    [...groups.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })).forEach(institution => {
-      const groupRows = groups.get(institution);
-      const total = groupRows.reduce((sum, inv) => sum + Data.presentValue(inv, false), 0);
-      const group = el("div", "ledger-group");
-      const head = el("div", "ledger-group-head");
-      head.appendChild(el("h3", null, institution));
-      head.appendChild(el("span", null, `${fmt$full(total)} · ${groupRows.length} position${groupRows.length === 1 ? "" : "s"}`));
-      group.appendChild(head);
-      group.appendChild(ledgerTable(sortedLedgerRows(groupRows)));
-      wrap.appendChild(group);
+    [...groups.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })).forEach(label => {
+      const groupRows = groups.get(label);
+      wrap.appendChild(ledgerGroupBlock(label, groupRows));
     });
   }
 
@@ -2165,8 +2192,11 @@
     const live = new Set(Data.all().map(i => i.ID));
     if (ui.editingId != null && !live.has(ui.editingId)) ui.editingId = null;
     wrap.innerHTML = "";
-    if (ui.ledgerByInstitution) renderGroupedLedger(wrap, rows);
-    else wrap.appendChild(ledgerTable(sortedLedgerRows(rows)));
+    ui.ledgerGroupBy = coerceLedgerGroupBy(ui.ledgerGroupBy);
+    const groupSelect = $("#ledger-group-by");
+    if (groupSelect && groupSelect.value !== ui.ledgerGroupBy) groupSelect.value = ui.ledgerGroupBy;
+    if (ui.ledgerGroupBy !== LEDGER_UNGROUPED) renderGroupedLedger(wrap, rows, ui.ledgerGroupBy);
+    else wrap.appendChild(ledgerGroupBlock("All positions", rows));
     $("#ledger-empty").style.display = rows.length ? "none" : "block";
     wrap.style.display = rows.length ? "" : "none";
     if (controls) controls.style.display = rows.length ? "" : "none";
@@ -2753,6 +2783,20 @@
 
   /* ---------- controls wiring ---------- */
 
+  function syncLedgerGroupingControl() {
+    const select = $("#ledger-group-by");
+    if (!select) return;
+    ui.ledgerGroupBy = coerceLedgerGroupBy(ui.ledgerGroupBy);
+    select.innerHTML = "";
+    [...LEDGER_GROUP_DIMS, LEDGER_UNGROUPED].forEach(dim => {
+      const option = el("option");
+      option.value = dim;
+      option.textContent = dim === LEDGER_UNGROUPED ? "Ungrouped" : dimLabel(dim);
+      if (dim === ui.ledgerGroupBy) option.selected = true;
+      select.appendChild(option);
+    });
+  }
+
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
@@ -2760,6 +2804,7 @@
     const themeModeToggle = $("#theme-mode-toggle");
     const projectionControlsPanel = $(".proj-controls-panel");
     syncProjectionControlsToDom();
+    syncLedgerGroupingControl();
     if (projectionControlsPanel) {
       projectionControlsPanel.addEventListener("toggle", () => {
         ui.projectionControlsOpen = projectionControlsPanel.open;
@@ -2846,13 +2891,8 @@
       ui.ledgerSort = e.target.value;
       renderAll();
     });
-    $("#ledger-sort-dir").addEventListener("click", e => {
-      ui.ledgerSortDir = ui.ledgerSortDir === "asc" ? "desc" : "asc";
-      e.currentTarget.textContent = ui.ledgerSortDir === "asc" ? "A-Z" : "Z-A";
-      renderAll();
-    });
-    $("#ledger-by-institution").addEventListener("change", e => {
-      ui.ledgerByInstitution = e.target.checked;
+    $("#ledger-group-by").addEventListener("change", e => {
+      ui.ledgerGroupBy = coerceLedgerGroupBy(e.target.value);
       renderAll();
     });
   }

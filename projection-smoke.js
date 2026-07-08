@@ -5,6 +5,7 @@ const vm = require("node:vm");
 
 const dataSource = fs.readFileSync(path.join(__dirname, "data.js"), "utf8");
 const uiSource = fs.readFileSync(path.join(__dirname, "ui.js"), "utf8");
+const indexSource = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const sandbox = {};
 vm.runInNewContext(`${dataSource}\nglobalThis.Data = Data;`, sandbox, { filename: "data.js" });
 const { Data } = sandbox;
@@ -111,5 +112,9 @@ assert.match(uiSource, /: ui\.simpleMonthly > 0;/, "legacy nonzero simple monthl
 assert.match(uiSource, /monthlyContribution:\s*effectiveSimpleMonthly\(\)/, "simple projection uses enabled-state effective monthly contribution");
 assert.match(uiSource, /function coerceProjectionView\(value\)[\s\S]*return value === "detailed" \|\| value === "simple" \? value : "simple";/, "invalid persisted projection view falls back to simple");
 assert.match(uiSource, /function coerceProjectionControlsOpen\(value\)[\s\S]*return value === true;/, "invalid persisted projection controls state falls back to collapsed");
+assert.ok(
+  indexSource.indexOf('id="proj-view-simple"') < indexSource.indexOf('id="proj-view-detailed"'),
+  "simple projection toggle appears before detailed"
+);
 
 console.log("ok - projection amortization and simple contribution smoke");

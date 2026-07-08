@@ -592,7 +592,7 @@ input::placeholder { color: var(--faint); }
 select { cursor: pointer; }
 
 label.field { display: block; }
-label.field span {
+label.field > span:not(.price-field):not(.tax-field) {
   display: block; font-family: var(--mono); font-size: .64rem;
   color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
   margin-bottom: 6px;
@@ -1131,9 +1131,10 @@ tr.editing input[type="number"] { min-width: 66px; }
   display: flex; align-items: end; gap: 10px; flex-wrap: wrap;
   margin-bottom: 14px;
 }
+.ledger-group-field { width: min(240px, 100%); }
+.ledger-group-field select { min-width: 180px; }
 .ledger-sort-field { width: min(240px, 100%); }
 .ledger-sort-field select { min-width: 180px; }
-#ledger-sort-dir { min-width: 74px; }
 .ledger-table-wrap { display: flex; flex-direction: column; gap: 18px; }
 .ledger-group { display: flex; flex-direction: column; gap: 8px; }
 .ledger-group-head {
@@ -1151,25 +1152,26 @@ tr.editing input[type="number"] { min-width: 66px; }
 .add-form .span-2 { grid-column: span 2; }
 .form-actions { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
 .form-hint { font-family: var(--mono); font-size: .68rem; color: var(--faint); margin-left: auto; }
-.price-field { display: flex; gap: 6px; }
+.price-field { display: flex; align-items: center; gap: 8px; width: 100%; }
 .price-field input { flex: 1; min-width: 0; }
-.fetch-btn { padding: 6px 11px; font-size: .7rem; white-space: nowrap; }
+.fetch-btn { flex: 0 0 auto; align-self: center; min-height: 34px; padding: 6px 12px; font-size: .7rem; white-space: nowrap; }
 .fetch-btn[disabled] { opacity: .55; cursor: wait; }
 button[disabled] { opacity: .55; cursor: wait; }
 
 /* removable-rate control (tax) — input with a −/+ toggle for "doesn't apply" */
-.tax-field { display: flex; gap: 6px; align-items: stretch; }
+.tax-field { display: flex; gap: 8px; align-items: center; }
 .tax-field input { flex: 1; min-width: 0; }
 .mini-btn {
-  padding: 0 11px; font-size: .95rem; line-height: 1; min-width: 34px;
+  flex: 0 0 auto; align-self: center;
+  min-width: 34px; min-height: 34px; padding: 0 11px; font-size: .95rem; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .tax-field.off input { opacity: .4; }
 tr.editing .tax-field { gap: 4px; }
-tr.editing .mini-btn { padding: 0 8px; min-width: 26px; font-size: .85rem; }
+tr.editing .mini-btn { min-width: 26px; min-height: 28px; padding: 0 8px; font-size: .85rem; }
 
 /* amortization: two small inputs (months · payment), dimmed when N/A */
-.amort-field { display: flex; gap: 4px; }
+.amort-field { display: flex; align-items: center; gap: 4px; }
 .amort-field input { min-width: 58px; }
 .amort-field.off { opacity: .4; }
 .amort-badge {

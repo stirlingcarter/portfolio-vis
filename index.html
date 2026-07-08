@@ -25,7 +25,7 @@ try {
 
   <header>
     <div>
-      <div class="wordmark">ColdData <em>Ledger</em></div>
+      <div class="wordmark">ColdData <em>Ledger </em></div>
     </div>
     <div class="header-actions">
       <div class="header-icon-cluster" role="group" aria-label="Portfolio controls">
@@ -87,6 +87,18 @@ try {
         <div class="panel settings-ledger-panel">
           <div id="ledger-empty" class="file-note" style="display:none;">No positions yet — add a position below, or use + Add ledger to start a new ledger.</div>
           <div class="ledger-controls" id="ledger-controls">
+            <label class="field ledger-group-field">
+              <span>Group tables</span>
+              <select id="ledger-group-by" aria-label="Ledger table grouping">
+                <option value="Institution">Institution</option>
+                <option value="Account Type">Account type</option>
+                <option value="Kind">Kind</option>
+                <option value="Category">Vehicle</option>
+                <option value="Subcategory">Vehicle category</option>
+                <option value="Ticker">Ticker</option>
+                <option value="__ungrouped__">Ungrouped</option>
+              </select>
+            </label>
             <label class="field ledger-sort-field">
               <span>Sort rows</span>
               <select id="ledger-sort" aria-label="Ledger sort">
@@ -98,12 +110,6 @@ try {
                 <option value="Category">Vehicle</option>
                 <option value="Subcategory">Vehicle category</option>
               </select>
-            </label>
-            <button id="ledger-sort-dir" type="button" aria-label="Reverse ledger sort">A-Z</button>
-            <label class="toggle">
-              <input type="checkbox" id="ledger-by-institution">
-              <span class="track"></span>
-              <span class="t-label">By institution</span>
             </label>
           </div>
           <div class="ledger-table-wrap" id="ledger-table-wrap"></div>
@@ -239,8 +245,8 @@ try {
         <div class="head-right projection-head-controls">
           <span class="section-note" id="projection-mode-note">aggregate assets/debt · one rate · one contribution</span>
           <div class="view-toggle" role="group" aria-label="Projection view">
-            <button type="button" id="proj-view-detailed" aria-pressed="false">Detailed</button>
             <button type="button" id="proj-view-simple" aria-pressed="true">Simple</button>
+            <button type="button" id="proj-view-detailed" aria-pressed="false">Detailed</button>
           </div>
         </div>
       </div>

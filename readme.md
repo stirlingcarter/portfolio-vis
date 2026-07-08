@@ -125,6 +125,10 @@ Semantics — read carefully, two fields are easy to confuse:
   Note: `Category` and `Subcategory` keep those keys in the data for
   compatibility, but the UI labels them **Vehicle** and **Vehicle Category**
   (display-only map `DIM_LABELS` in `ui.js`).
+- The settings ledger defaults to grouping tables by **Institution** and can
+  group by any `TAG_DIMENSIONS` field. Group headers use signed net values
+  (`netValue`), so debts reduce group totals even though debt rows still display
+  their owed balance magnitude.
 - **`Ticker` is required** but need not be a market symbol — a short call-sign up
   to 7 chars (`HOUSE`, `DEBT`, `MORT`) is fine for real estate, loans, etc. Live
   pricing is only attempted when a row *looks tradable* (`looksTradable` in
