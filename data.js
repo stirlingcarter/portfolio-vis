@@ -733,7 +733,7 @@ const Data = (() => {
   ------------------------------------ */
   function aggregateProjection(opts) {
     const { years, rate, taxOn } = opts;
-    const monthlyContribution = Math.max(0, Number(opts.monthlyContribution) || 0);
+    const monthlyContribution = Number(opts.monthlyContribution) || 0;
     const N = Math.max(1, Math.round(years * 12));
     const rm = (Number(rate) || 0) / 12;
     const assets = new Array(N + 1);
@@ -787,7 +787,8 @@ const Data = (() => {
      debts are ineligible — they pay down on their own schedule (months
      remaining × monthly payment), not from the contribution budget. A
      non-amortized debt (e.g. margin) CAN be a target: a positive monthly
-     amount pays it down; deselect it to let it ride at its rate.
+     amount pays it down; negative exact amounts are allowed and model
+     withdrawals / added borrowing.
      Returns { months, series:[{id,label,isDebt,amortized,contributing,values}],
                totals, contrib:{ perTarget, count, total } }
   ------------------------------------ */
@@ -797,11 +798,11 @@ const Data = (() => {
     const exactAmount = id => {
       if (!contribAmounts) return null;
       const raw = typeof contribAmounts.get === "function" ? contribAmounts.get(id) : contribAmounts[id];
-      return Math.max(0, Number(raw) || 0);
+      return Number(raw) || 0;
     };
     const eligibleTargets = investments.filter(i => contribIds.has(i.ID) && !isAmortized(i));
     const targets = contribAmounts
-      ? eligibleTargets.filter(i => exactAmount(i.ID) > 0)
+      ? eligibleTargets.filter(i => exactAmount(i.ID) !== 0)
       : eligibleTargets;
     const totalContribution = contribAmounts
       ? targets.reduce((sum, i) => sum + exactAmount(i.ID), 0)
@@ -813,7 +814,7 @@ const Data = (() => {
       const isDebt = inv["Kind"] === "Debt";
       const amort = isAmortized(inv);
       const exact = contribAmounts ? exactAmount(inv.ID) : perTarget;
-      const contributing = !amort && contribIds.has(inv.ID) && exact > 0;
+      const contributing = !amort && contribIds.has(inv.ID) && exact !== 0;
       const c = contributing ? exact : 0;
       const taxMult = taxOn ? (1 - taxRate(inv)) : 1;
       const values = new Array(N + 1);

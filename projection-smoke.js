@@ -69,6 +69,19 @@ for (let m = 1; m < debt.values.length; m++) {
   assert.ok(debt.values[m] >= debt.values[m - 1], "detailed amortized debt never grows more negative");
 }
 
+const detailedWithdrawal = Data.projection({
+  years: 1,
+  monthlyTotal: 0,
+  contribIds: new Set([1]),
+  contribAmounts: new Map([[1, -50]]),
+  taxOn: false
+});
+const withdrawalAsset = detailedWithdrawal.series.find(s => s.id === 1);
+assert.equal(detailedWithdrawal.contrib.count, 1, "negative exact contribution remains a selected target");
+assert.equal(detailedWithdrawal.contrib.total, -50, "negative exact contribution is included in the monthly total");
+assert.equal(withdrawalAsset.contribution, -50, "asset receives the negative exact contribution");
+approx(withdrawalAsset.values[12], 400, "negative exact contribution withdraws from the asset monthly");
+
 Data.loadArray([
   row({ ID: 1, Ticker: "ASSET", Value: 1000 }),
   row({ ID: 2, Ticker: "CAR", Value: 12000, Kind: "Debt", "Amort Months": 12, "Amort Payment": 1000 }),
@@ -96,6 +109,16 @@ approx(simpleWithContribution.debts[12], 3000, "simple contribution does not pay
 assert.equal(simpleWithContribution.contribution.monthly, 100, "simple monthly contribution metadata is reported");
 assert.equal(simpleWithContribution.contribution.total, 1200, "simple total contribution metadata is reported");
 
+const simpleWithWithdrawal = Data.aggregateProjection({
+  years: 1,
+  rate: 0,
+  monthlyContribution: -50,
+  taxOn: false
+});
+approx(simpleWithWithdrawal.assets[12], 400, "negative simple monthly contribution withdraws from aggregate assets monthly");
+assert.equal(simpleWithWithdrawal.contribution.monthly, -50, "negative simple monthly contribution metadata is reported");
+assert.equal(simpleWithWithdrawal.contribution.total, -600, "negative simple total contribution metadata is reported");
+
 const simpleContributionDisabled = Data.aggregateProjection({
   years: 1,
   rate: 0,
@@ -108,11 +131,15 @@ assert.equal(simpleContributionDisabled.contribution.monthly, 0, "disabled simpl
 assert.match(uiSource, /projectionView:\s*"simple"/, "simple projection is the no-history default view");
 assert.match(uiSource, /projectionControlsOpen:\s*false/, "projection controls start collapsed without saved state");
 assert.match(uiSource, /simpleMonthlyEnabled:\s*false/, "simple contribution starts disabled without saved amount");
+assert.match(uiSource, /simpleMonthly:\s*\{\s*min:\s*-1000000/, "simple monthly contribution accepts negative values");
 assert.match(uiSource, /: ui\.simpleMonthly > 0;/, "legacy nonzero simple monthly amount migrates to enabled");
 const simpleMonthlyInputHandler = uiSource.match(/simpleMonthly\.addEventListener\("input", \(\) => \{([\s\S]*?)\n    \}\);/);
 assert.ok(simpleMonthlyInputHandler, "simple monthly amount input handler exists");
 assert.doesNotMatch(simpleMonthlyInputHandler[1], /ui\.simpleMonthlyEnabled\s*=/, "editing or clearing the simple monthly amount never flips the toggle");
+assert.match(simpleMonthlyInputHandler[1], /raw === "-"/, "simple monthly input lets the user type a minus sign before digits");
 assert.match(uiSource, /monthlyContribution:\s*effectiveSimpleMonthly\(\)/, "simple projection uses enabled-state effective monthly contribution");
+assert.doesNotMatch(indexSource, /id="simple-monthly-input"[^>]*min="0"/, "simple monthly input markup does not forbid negatives");
+assert.doesNotMatch(uiSource, /amtInput\.min = "0"/, "exact contribution inputs do not forbid negatives");
 assert.match(uiSource, /function coerceProjectionView\(value\)[\s\S]*return value === "detailed" \|\| value === "simple" \? value : "simple";/, "invalid persisted projection view falls back to simple");
 assert.match(uiSource, /function coerceProjectionControlsOpen\(value\)[\s\S]*return value === true;/, "invalid persisted projection controls state falls back to collapsed");
 assert.ok(

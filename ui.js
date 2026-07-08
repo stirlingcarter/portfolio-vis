@@ -106,7 +106,7 @@
     years: { min: 1, max: 50, step: 1, fallback: 25 },
     monthly: { min: 0, max: 10000, step: 100, fallback: 1000 },
     simpleRate: { min: -0.1, max: 0.5, step: 0.005, fallback: 0.08 },
-    simpleMonthly: { min: 0, max: 1000000, step: "any", fallback: 0 }
+    simpleMonthly: { min: -1000000, max: 1000000, step: "any", fallback: 0 }
   };
   const HERO_METRICS = [
     { key: "net", label: "net worth", value: () => Data.total(ui.taxOn) },
@@ -2530,7 +2530,7 @@
 
   function exactContribTotal() {
     let total = 0;
-    ui.contribIds.forEach(id => total += Math.max(0, Number(ui.contribAmounts.get(id)) || 0));
+    ui.contribIds.forEach(id => total += Number(ui.contribAmounts.get(id)) || 0);
     return total;
   }
 
@@ -2568,7 +2568,7 @@
       });
 
       const amtInput = el("input", "contrib-amount");
-      amtInput.type = "number"; amtInput.min = "0"; amtInput.step = "any";
+      amtInput.type = "number"; amtInput.step = "any";
       amtInput.value = !moneyHidden() && on ? +exact.toFixed(2) : "";
       amtInput.placeholder = moneyHidden() ? MONEY_MASK : "$/mo";
       amtInput.disabled = moneyHidden() || !on;
@@ -2581,7 +2581,7 @@
           seedExactContribAmounts(perTarget);
           ui.contribTouched = true;
         }
-        const amount = Math.max(0, Number(amtInput.value) || 0);
+        const amount = Number(amtInput.value) || 0;
         ui.contribAmounts.set(inv.ID, amount);
         amount > 0 ? ui.contribIds.add(inv.ID) : ui.contribIds.delete(inv.ID);
         ui.contribTouched = true;
@@ -3610,7 +3610,16 @@
     simpleMonthly.addEventListener("input", () => {
       // The amount box is only the saved dollar value. The on/off state is a
       // separate user choice and must never change just because the box is
-      // cleared, typed into, or parsed to zero.
+      // cleared, typed into, parsed to zero, or made negative.
+      const raw = simpleMonthly.value.trim();
+      if (raw === "" || raw === "-" || raw === "+" || raw === "." || raw === "-." || raw === "+.") {
+        if (raw === "") {
+          ui.simpleMonthly = 0;
+          $("#simple-monthly-out").textContent = simpleMonthlyOutputText();
+          saveUiState();
+        }
+        return;
+      }
       ui.simpleMonthly = rangeValue(simpleMonthly.value, RANGE_LIMITS.simpleMonthly);
       simpleMonthly.value = String(ui.simpleMonthly);
       $("#simple-monthly-out").textContent = simpleMonthlyOutputText();
