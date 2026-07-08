@@ -123,6 +123,11 @@ assert.match(
   /function amountEditUpdate\(inv, amount\)[\s\S]*if \(inv\.Kind === "Debt"\) \{[\s\S]*update\["Value"\] = amount;[\s\S]*return update;/,
   "inline debt amount edits persist the principal as Value"
 );
+assert.doesNotMatch(
+  JSON.stringify(Data.SUGGESTIONS),
+  new RegExp(["paren", "tal"].join(""), "i"),
+  "default suggestions do not ship unwanted personal-debt labels"
+);
 
 const PORTFOLIOS_KEY = "coldledger.portfolios.v1";
 

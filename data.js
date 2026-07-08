@@ -32,7 +32,7 @@ const Data = (() => {
   const SUGGESTIONS = {
     "Account Type": ["Brokerage", "Roth IRA", "Trad IRA", "HSA", "401k", "Checking", "Savings", "Wallet"],
     "Category": ["Stock", "Bond", "Loan", "Mortgage", "Cash", "Crypto", "Real Estate"],
-    "Subcategory": ["Growth Stocks", "Index", "Dividend", "parental", "cc", "Emergency Fund"],
+    "Subcategory": ["Growth Stocks", "Index", "Dividend", "Personal", "cc", "Emergency Fund"],
     "Institution": ["Robinhood", "Fidelity", "Vanguard", "Schwab", "Chase", "Coinbase"]
   };
 
