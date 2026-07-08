@@ -46,6 +46,7 @@ prices.js     — PRICE LAYER: live quote lookups (Yahoo + CoinGecko), zero DOM/
 portfolios.js — PERSISTENCE LAYER: named copies in localStorage, syncs with Data
 ui.js         — PRESENTATION LAYER: rendering, hand-rolled SVG charts, wiring
 tickers.json  — first-run seed / legacy JSON sample (no longer the live store)
+history-smoke.js — node smoke test for the holdings-history look-back feature
 .nojekyll     — GitHub Pages marker: serve files directly, without Jekyll
 readme.md     — this file
 ```
