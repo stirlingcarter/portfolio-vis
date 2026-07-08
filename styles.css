@@ -2400,6 +2400,27 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .ledger-tab-actions { right: 6px; gap: 3px; }
   .ledger-tab-action-icon { width: 30px; height: 30px; }
   .ledger-tab-panel { padding: 14px; }
+  /* ledger tables: stack the group header and tighten the grid so more of
+     each wide row is visible before the horizontal scroll kicks in */
+  .ledger-group { position: relative; }
+  .ledger-group-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .ledger-group-head span { font-size: .63rem; line-height: 1.4; }
+  .settings-view table { min-width: 0; }
+  th { padding: 7px 9px; font-size: .58rem; letter-spacing: .1em; }
+  td { padding: 9px 9px; }
+  .tag-pill { padding: 2px 8px; font-size: .64rem; }
+  /* thin, on-brand scrollbars for the horizontally-scrolling data surfaces */
+  .table-scroll,
+  #proj-chart { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--brass) 42%, transparent) transparent; }
+  .table-scroll::-webkit-scrollbar,
+  #proj-chart::-webkit-scrollbar { height: 7px; }
+  .table-scroll::-webkit-scrollbar-track,
+  #proj-chart::-webkit-scrollbar-track { background: transparent; }
+  .table-scroll::-webkit-scrollbar-thumb,
+  #proj-chart::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--brass) 42%, transparent);
+    border-radius: 99px;
+  }
   #projection .panel { padding: 12px; }
   #proj-chart { margin-inline: -6px; }
   .projection-head-controls, .biome-head-controls { align-items: flex-start; flex-direction: column; }
