@@ -18,9 +18,11 @@ assert.match(indexSource, /id="history-ranges"/, "range selector container exist
 assert.match(uiSource, /renderHistorySection\(\);/, "renderAll draws the history section");
 assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own storage key");
 assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
-assert.match(indexSource, /Auto-priced asset holdings value history/, "history section is labeled as asset holdings value");
-assert.match(indexSource, /auto-priced asset holdings · current shares × past prices/, "history note is explicitly assets-only");
-assert.match(uiSource, /asset holdings<\/span> \$\{fmt\$full\(values\[i\]\)\}/, "history tooltip is explicitly assets-only");
+assert.match(indexSource, /Total assets value history/, "history section is labeled as total assets value");
+assert.match(indexSource, /plus other assets held flat at current value/, "history note explains the flat add-on");
+assert.match(uiSource, /total assets<\/span> \$\{fmt\$full\(values\[i\]\)\}/, "history tooltip reports total assets");
+assert.match(uiSource, /Data\.isAsset\(inv\) && !pricedByHistory\.has\(inv\)/, "unpriced assets ride on top of the series");
+assert.match(uiSource, /series\.values = series\.values\.map\(v => v \+ flatAssetValue\)/, "flat add-on shifts every point so the line tracks total assets");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
 assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padLeft: 0,\s*padRight: 0,[\s\S]*?\}\);/, "history chart has no horizontal padding (full-bleed line)");
 assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");

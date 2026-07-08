@@ -2767,8 +2767,10 @@
   }
   const historyRangeSpec = () => Prices.HISTORY_RANGES.find(r => r.key === coerceHistoryRange(ui.historyRange));
   const historyCacheKey = (sym, rangeKey) => `${sym}|${rangeKey}`;
-  // The hero history intentionally tracks market-priced asset holdings only.
-  // Net worth appears in the hero/balance sheet/projection, where debts subtract.
+  // The hero history prices market-traded asset holdings through time; assets
+  // it can't price (non-ticker positions, failed fetches) are added on top as
+  // a flat line at current value so the chart tracks TOTAL assets. Net worth
+  // appears in the hero/balance sheet/projection, where debts subtract.
   const isHistoryHolding = inv => Data.isAsset(inv) && shouldAutoPrice(inv);
 
   function readHistoryStorage() {
@@ -2946,7 +2948,7 @@
 
     const svg = svgEl("svg", {
       viewBox: `0 0 ${W} ${H}`, class: "chart-svg history-chart-svg", role: "img",
-      "aria-label": `Auto-priced asset holdings value over the past ${spec.label}`
+      "aria-label": `Total assets value over the past ${spec.label}`
     });
     const gradientId = "history-plot-bottom-fade";
     const maskId = "history-plot-mask";
@@ -3020,7 +3022,7 @@
       const pct = values[0] ? delta / values[0] : 0;
       showTip(
         `<b>${fmtHistoryTime(times[i], spec, true)}</b><br>` +
-        `<span class="tt-k">asset holdings</span> ${fmt$full(values[i])}<br>` +
+        `<span class="tt-k">total assets</span> ${fmt$full(values[i])}<br>` +
         `<span class="tt-k">vs start</span> ${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`,
         clientX, clientY);
     };
@@ -3103,6 +3105,16 @@
       filter: isHistoryHolding
     });
 
+    // Assets the price series can't cover — non-ticker positions plus holdings
+    // whose history failed to load — ride on top as a flat add-on at their
+    // current value, so the line (and readout) tracks TOTAL assets and matches
+    // the hero's assets figure instead of only the auto-priced subset.
+    const pricedByHistory = new Set(series.included);
+    const flatAssetValue = Data.all()
+      .filter(inv => Data.isAsset(inv) && !pricedByHistory.has(inv))
+      .reduce((s, inv) => s + Data.presentValue(inv, ui.taxOn), 0);
+    if (flatAssetValue) series.values = series.values.map(v => v + flatAssetValue);
+
     const chart = $("#history-chart");
     if (!series.included.length) {
       if (chart) chart.innerHTML = "";
@@ -3123,7 +3135,7 @@
         const failure = historyFailures.get(historyCacheKey(sym, spec.key));
         return failure ? `${sym} (${failure.message})` : sym;
       });
-      notes.push(`No ${spec.label} history for: ${reasons.join(", ")}`);
+      notes.push(`Held flat at current value (no ${spec.label} history): ${reasons.join(", ")}`);
     }
     const start = asOf - spec.ms;
     const shallow = [...seriesByTicker.entries()]

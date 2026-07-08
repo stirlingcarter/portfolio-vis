@@ -243,15 +243,18 @@ unresolvable tickers (cash, loans, unknown symbols) for manual entry.
 
 ## Holdings history (look-back chart)
 
-The **Holdings history** section is a Robinhood-style single smooth line of the
-current auto-priced asset holdings valued at *past* prices: for each look-back
-range (1H · 24H · 3D · 1W · 2W · 1M · 1Y · 5Y · 10Y · 20Y) it sums
-`current shares × price(t)` per ticker on a shared time grid. It is a
-hypothetical ("what these holdings were worth"), not an account statement —
-past buys/sells are not modeled, and only holdings that pass `looksTradable`
-(plus fixed `USD`, which resolves as a flat `$1` line) participate. Debts are
-never included. The post-tax toggle scales each lot by its own tax rate, so
-the line's right edge matches the invested-assets total.
+The **Holdings history** section is a Robinhood-style single smooth line of
+**total assets** valued at *past* prices: for each look-back range
+(1H · 24H · 3D · 1W · 2W · 1M · 1Y · 5Y · 10Y · 20Y) it sums
+`current shares × price(t)` per auto-priced ticker on a shared time grid,
+then adds every asset it *can't* price through time — non-ticker positions
+and holdings whose history failed to load — as a flat offset at current
+value, so the line (and its readout) matches the hero's total-assets figure.
+It is a hypothetical ("what these holdings were worth"), not an account
+statement — past buys/sells are not modeled. Auto-priced participation
+requires `looksTradable` (plus fixed `USD`, which resolves as a flat `$1`
+line); everything else rides flat on top. Debts are never included. The
+post-tax toggle scales each lot by its own tax rate.
 
 Presentation follows Robinhood: the chart draws **no y-axis, no x-axis, and no
 grid lines** — the line bleeds edge-to-edge across the full viewport width
