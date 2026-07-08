@@ -2748,13 +2748,15 @@
   const HISTORY_Y_DOMAIN_PADDING_RATIO = .65; // extra scale room compresses visual swings
   const HISTORY_Y_DOMAIN_MIN_PADDING_RATIO = .02;
   const HISTORY_Y_DOMAIN_MIN_PADDING = 1;
+  // Robinhood-style: the line bleeds to both edges and there are no axes, so
+  // the plot has no horizontal padding and only a sliver of vertical headroom.
   const HISTORY_CHART_GEOMETRY = Object.freeze({
     width: 1080,
     height: 340,
-    padLeft: 76,
-    padRight: 24,
+    padLeft: 0,
+    padRight: 0,
     padTop: 18,
-    padBottom: 34
+    padBottom: 6
   });
   const HISTORY_PLOT_BOTTOM_FADE_PX = 34;
   const HISTORY_PLOT_BOTTOM_FADE_MIN_OPACITY = .05;
@@ -2984,22 +2986,8 @@
     const plotLayer = svgEl("g", { class: "history-plot-layer", mask: `url(#${maskId})` });
     svg.appendChild(plotLayer);
 
-    for (let i = 0; i <= 4; i++) {
-      const v = yLo + ((yHi - yLo) / 4) * i;
-      plotLayer.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: "grid-line" }));
-      const t = svgEl("text", { x: padL - 10, y: y(v) + 4, "text-anchor": "end", class: "axis-text" });
-      t.textContent = fmt$(v);
-      svg.appendChild(t);
-    }
-    for (let i = 0; i <= 4; i++) {
-      const idx = Math.round((N / 4) * i);
-      const t = svgEl("text", {
-        x: x(idx), y: H - 10, class: "axis-text",
-        "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle"
-      });
-      t.textContent = fmtHistoryTime(times[idx], spec, false);
-      svg.appendChild(t);
-    }
+    // Robinhood-style: no y-axis labels, no grid lines, no x-axis time labels.
+    // Values and times surface only through scrubbing the line.
 
     // Dotted reference at the range-start value — Robinhood's "prior close" cue.
     plotLayer.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(values[0]), y2: y(values[0]), class: "history-baseline" }));
@@ -3017,9 +3005,10 @@
     const marker = svgEl("circle", { cx: 0, cy: 0, r: 3.5, class: `history-dot ${dir}`, opacity: 0 });
     plotLayer.appendChild(cross);
     plotLayer.appendChild(marker);
-    svg.addEventListener("mousemove", e => {
+
+    const scrubTo = (clientX, clientY) => {
       const rect = svg.getBoundingClientRect();
-      const mx = (e.clientX - rect.left) / rect.width * W;
+      const mx = (clientX - rect.left) / rect.width * W;
       const i = Math.round(clamp((mx - padL) / iw, 0, 1) * N);
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
       cross.setAttribute("opacity", 1);
@@ -3031,13 +3020,30 @@
         `<b>${fmtHistoryTime(times[i], spec, true)}</b><br>` +
         `<span class="tt-k">asset holdings</span> ${fmt$full(values[i])}<br>` +
         `<span class="tt-k">vs start</span> ${delta >= 0 ? "+" : "−"}${fmt$(Math.abs(delta))} · ${(pct * 100).toFixed(2)}%`,
-        e.clientX, e.clientY);
-    });
-    svg.addEventListener("mouseleave", () => {
+        clientX, clientY);
+    };
+    const endScrub = () => {
       cross.setAttribute("opacity", 0);
       marker.setAttribute("opacity", 0);
       hideTip();
+    };
+
+    // Robinhood-style scrubbing: one continuous press-and-drag slides across
+    // the series (no lift-and-tap needed). Pointer capture keeps a touch drag
+    // tracking even when the finger wanders off the SVG; `touch-action: none`
+    // (set in CSS) stops the page from scrolling out from under the gesture.
+    // Mouse users still get plain hover scrubbing via pointermove.
+    svg.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "mouse") {
+        try { svg.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
+      }
+      e.preventDefault();
+      scrubTo(e.clientX, e.clientY);
     });
+    svg.addEventListener("pointermove", e => scrubTo(e.clientX, e.clientY));
+    svg.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") endScrub(); });
+    svg.addEventListener("pointercancel", endScrub);
+    svg.addEventListener("pointerleave", endScrub);
 
     container.appendChild(svg);
   }

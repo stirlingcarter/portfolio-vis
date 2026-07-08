@@ -1120,13 +1120,16 @@ input[type="range"]::-moz-range-thumb {
 .history-readout .history-asof {
   font-size: .64rem; color: var(--faint); letter-spacing: .08em; text-transform: uppercase;
 }
+/* Robinhood-style full bleed: the chart escapes its centered column and spans
+   the viewport edge-to-edge (html clips overflow-x, so no horizontal scroll). */
 .history-chart {
   position: relative;
   z-index: 1;
-  max-width: 100%;
-  margin-inline: clamp(-18px, -2vw, -8px);
+  width: 100vw;
+  max-width: 100vw;
+  margin-inline: calc(50% - 50vw);
   margin-bottom: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 .history-chart-svg {
   position: relative;
@@ -1135,16 +1138,8 @@ input[type="range"]::-moz-range-thumb {
   min-width: 0;
   opacity: .76;
   transform: none;
+  touch-action: none;
 }
-.history-chart-svg .axis-text {
-  fill: rgba(255,255,255,.78);
-  opacity: .86;
-  paint-order: stroke;
-  stroke: rgba(0,0,0,.58);
-  stroke-width: 2.5px;
-  stroke-linejoin: round;
-}
-.history-chart-svg .grid-line,
 .history-chart-svg .history-baseline {
   opacity: .36;
 }
@@ -2443,7 +2438,6 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .history-readout .history-delta { font-size: .66rem; }
   .history-readout .history-asof { display: none; }
   .history-chart {
-    margin-inline: 0;
     overflow: hidden;
   }
   .history-chart .chart-svg {

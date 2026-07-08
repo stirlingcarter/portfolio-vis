@@ -22,7 +22,7 @@ assert.match(indexSource, /Auto-priced asset holdings value history/, "history s
 assert.match(indexSource, /auto-priced asset holdings · current shares × past prices/, "history note is explicitly assets-only");
 assert.match(uiSource, /asset holdings<\/span> \$\{fmt\$full\(values\[i\]\)\}/, "history tooltip is explicitly assets-only");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
-assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padBottom: 34[\s\S]*?\}\);/, "history chart geometry is centralized");
+assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padLeft: 0,\s*padRight: 0,[\s\S]*?\}\);/, "history chart has no horizontal padding (full-bleed line)");
 assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");
 assert.match(uiSource, /y2: plotBottom,\s*gradientUnits: "userSpaceOnUse"/, "history fade gradient terminates at the plot bottom");
 assert.match(uiSource, /mask: `url\(#\$\{maskId\}\)`/, "history plot layer uses the geometry-tied SVG mask");
@@ -62,6 +62,19 @@ function extractCssRule(selector) {
 const historyChartRule = extractCssRule(".history-chart");
 assert.doesNotMatch(historyChartRule, /(?:-webkit-)?mask-image|mask-composite/, "history chart wrapper does not own the fade mask");
 assert.doesNotMatch(historyChartRule, /--history-(fade-band|label-safe)/, "history fade is not controlled by wrapper percentages");
+assert.match(historyChartRule, /width:\s*100vw/, "history chart spans the full viewport width");
+assert.match(historyChartRule, /margin-inline:\s*calc\(50% - 50vw\)/, "history chart bleeds to both screen borders");
+
+/* ---------- Robinhood-style chart: no axes, drag-to-scrub ---------- */
+
+const drawHistoryChartSource = extractUiFunction("drawHistoryChart");
+assert.doesNotMatch(drawHistoryChartSource, /axis-text/, "history chart renders no axis labels");
+assert.doesNotMatch(drawHistoryChartSource, /grid-line/, "history chart renders no grid lines");
+assert.match(drawHistoryChartSource, /addEventListener\("pointerdown"/, "history chart scrubbing starts on pointer press");
+assert.match(drawHistoryChartSource, /addEventListener\("pointermove"/, "history chart scrubbing follows pointer drags");
+assert.match(drawHistoryChartSource, /setPointerCapture/, "touch drags keep scrubbing without lift-and-tap");
+const historySvgRule = extractCssRule(".history-chart-svg");
+assert.match(historySvgRule, /touch-action:\s*none/, "touch drags scrub the chart instead of scrolling the page");
 
 const domainSandbox = { Math };
 vm.runInNewContext([

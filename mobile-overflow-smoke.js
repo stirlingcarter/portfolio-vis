@@ -57,8 +57,14 @@ assert.match(mobileHistoryRule, /width:\s*100%/, "mobile history section no long
 assert.match(mobileHistoryRule, /max-width:\s*100%/, "mobile history section is capped to its card");
 assert.doesNotMatch(mobileHistoryRule, /calc\(100%\s*\+/, "mobile history section does not add bleed width");
 
+// The chart itself is intentionally full-bleed (Robinhood-style): it spans
+// exactly the viewport width, so it cannot create document-level overflow.
+const historyChartRule = extractCssRule(stylesSource, ".history-chart");
+assert.match(historyChartRule, /width:\s*100vw/, "history chart spans exactly the viewport width");
+assert.match(historyChartRule, /max-width:\s*100vw/, "history chart never exceeds the viewport width");
+assert.match(historyChartRule, /margin-inline:\s*calc\(50% - 50vw\)/, "history chart bleed is centered, not additive");
+
 const mobileHistoryChartRule = extractCssRule(mobileBlock, ".history-chart");
-assert.match(mobileHistoryChartRule, /margin-inline:\s*0/, "mobile history chart does not use negative inline margins");
 assert.match(mobileHistoryChartRule, /overflow:\s*hidden/, "mobile history chart clips decorative SVG bleed");
 
 const mobileHistorySvgRule = extractCssRule(mobileBlock, ".history-chart .chart-svg");

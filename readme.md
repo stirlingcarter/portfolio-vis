@@ -253,6 +253,14 @@ past buys/sells are not modeled, and only holdings that pass `looksTradable`
 never included. The post-tax toggle scales each lot by its own tax rate, so
 the line's right edge matches the invested-assets total.
 
+Presentation follows Robinhood: the chart draws **no y-axis, no x-axis, and no
+grid lines** — the line bleeds edge-to-edge across the full viewport width
+(`width: 100vw` breakout in `.history-chart`) with only the dotted range-start
+baseline behind it. Values and timestamps surface exclusively by scrubbing:
+pointer events (`pointerdown`/`pointermove` + pointer capture,
+`touch-action: none`) let a single press-and-drag slide the crosshair across
+the series on touch — no lift-and-tap — while mouse hover scrubs as before.
+
 Data comes from the same two keyless sources as live pricing, one request per
 ticker per range (`Prices.history` / `Prices.historyMany`,
 specs in `Prices.HISTORY_RANGES`):
