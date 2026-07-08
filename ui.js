@@ -2998,7 +2998,9 @@
       d: `${lineD} L ${x(N).toFixed(1)} ${plotBottom.toFixed(1)} L ${x(0).toFixed(1)} ${plotBottom.toFixed(1)} Z`,
       class: `history-area ${dir}`
     }));
-    plotLayer.appendChild(svgEl("path", { d: lineD, fill: "none", class: `history-line ${dir}` }));
+    // non-scaling-stroke keeps the line a constant screen-pixel thickness:
+    // without it the 1080-unit viewBox squeezes the stroke sub-pixel on phones.
+    plotLayer.appendChild(svgEl("path", { d: lineD, fill: "none", "vector-effect": "non-scaling-stroke", class: `history-line ${dir}` }));
     plotLayer.appendChild(svgEl("circle", { cx: x(N), cy: y(values[N]), r: 4, class: `history-dot ${dir}` }));
 
     const cross = svgEl("line", { x1: 0, x2: 0, y1: padT, y2: plotBottom, class: "crosshair-line", opacity: 0 });

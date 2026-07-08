@@ -1144,7 +1144,9 @@ input[type="range"]::-moz-range-thumb {
   opacity: .36;
 }
 .history-baseline { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 5; stroke-opacity: .75; }
-.history-line { stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+/* Screen-pixel width (the path uses vector-effect: non-scaling-stroke), so the
+   line stays solid on phones instead of thinning with the viewBox scale. */
+.history-line { stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
 .history-line.is-up { stroke: var(--asset-bright); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--asset) 36%, transparent)); }
 .history-line.is-down { stroke: var(--danger); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--danger) 34%, transparent)); }
 .history-area { stroke: none; }

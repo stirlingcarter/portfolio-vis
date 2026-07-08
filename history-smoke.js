@@ -73,6 +73,7 @@ assert.doesNotMatch(drawHistoryChartSource, /grid-line/, "history chart renders 
 assert.match(drawHistoryChartSource, /addEventListener\("pointerdown"/, "history chart scrubbing starts on pointer press");
 assert.match(drawHistoryChartSource, /addEventListener\("pointermove"/, "history chart scrubbing follows pointer drags");
 assert.match(drawHistoryChartSource, /setPointerCapture/, "touch drags keep scrubbing without lift-and-tap");
+assert.match(drawHistoryChartSource, /"vector-effect": "non-scaling-stroke"/, "line thickness is screen-constant, not viewBox-scaled");
 const historySvgRule = extractCssRule(".history-chart-svg");
 assert.match(historySvgRule, /touch-action:\s*none/, "touch drags scrub the chart instead of scrolling the page");
 
