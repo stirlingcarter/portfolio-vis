@@ -109,6 +109,9 @@ assert.match(uiSource, /projectionView:\s*"simple"/, "simple projection is the n
 assert.match(uiSource, /projectionControlsOpen:\s*false/, "projection controls start collapsed without saved state");
 assert.match(uiSource, /simpleMonthlyEnabled:\s*false/, "simple contribution starts disabled without saved amount");
 assert.match(uiSource, /: ui\.simpleMonthly > 0;/, "legacy nonzero simple monthly amount migrates to enabled");
+const simpleMonthlyInputHandler = uiSource.match(/simpleMonthly\.addEventListener\("input", \(\) => \{([\s\S]*?)\n    \}\);/);
+assert.ok(simpleMonthlyInputHandler, "simple monthly amount input handler exists");
+assert.doesNotMatch(simpleMonthlyInputHandler[1], /ui\.simpleMonthlyEnabled\s*=/, "editing or clearing the simple monthly amount never flips the toggle");
 assert.match(uiSource, /monthlyContribution:\s*effectiveSimpleMonthly\(\)/, "simple projection uses enabled-state effective monthly contribution");
 assert.match(uiSource, /function coerceProjectionView\(value\)[\s\S]*return value === "detailed" \|\| value === "simple" \? value : "simple";/, "invalid persisted projection view falls back to simple");
 assert.match(uiSource, /function coerceProjectionControlsOpen\(value\)[\s\S]*return value === true;/, "invalid persisted projection controls state falls back to collapsed");

@@ -3608,10 +3608,10 @@
       renderAll();
     });
     simpleMonthly.addEventListener("input", () => {
-      const wasZero = ui.simpleMonthly <= 0;
+      // The amount box is only the saved dollar value. The on/off state is a
+      // separate user choice and must never change just because the box is
+      // cleared, typed into, or parsed to zero.
       ui.simpleMonthly = rangeValue(simpleMonthly.value, RANGE_LIMITS.simpleMonthly);
-      if (ui.simpleMonthly <= 0) ui.simpleMonthlyEnabled = false;
-      else if (wasZero) ui.simpleMonthlyEnabled = true;
       simpleMonthly.value = String(ui.simpleMonthly);
       $("#simple-monthly-out").textContent = simpleMonthlyOutputText();
       if (simpleMonthlyEnabled) simpleMonthlyEnabled.checked = ui.simpleMonthlyEnabled;
