@@ -2728,6 +2728,20 @@
   const HISTORY_STORED_POINTS = 160;          // per-series cap kept in localStorage
   const HISTORY_GRID_POINTS = 120;            // rendered portfolio-line resolution
   const HISTORY_RETRY_MS = 10 * 60e3;         // wait before retrying a failed ticker
+  const HISTORY_Y_DOMAIN_PADDING_RATIO = .65; // extra scale room compresses visual swings
+  const HISTORY_Y_DOMAIN_MIN_PADDING_RATIO = .02;
+  const HISTORY_Y_DOMAIN_MIN_PADDING = 1;
+  const HISTORY_CHART_GEOMETRY = Object.freeze({
+    width: 1080,
+    height: 340,
+    padLeft: 76,
+    padRight: 24,
+    padTop: 18,
+    padBottom: 34
+  });
+  const HISTORY_PLOT_BOTTOM_FADE_PX = 34;
+  const HISTORY_PLOT_BOTTOM_FADE_MIN_OPACITY = .05;
+  const HISTORY_PLOT_MASK_BLEED_PX = 8;
 
   function coerceHistoryRange(value) {
     return Prices.HISTORY_RANGES.some(r => r.key === value) ? value : "24h";
@@ -2872,17 +2886,38 @@
     return d;
   }
 
+  function historyValueDomain(values) {
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const range = Math.max(0, hi - lo);
+    const scale = Math.max(Math.abs(lo), Math.abs(hi), 1);
+    const pad = Math.max(
+      range * HISTORY_Y_DOMAIN_PADDING_RATIO,
+      scale * HISTORY_Y_DOMAIN_MIN_PADDING_RATIO,
+      HISTORY_Y_DOMAIN_MIN_PADDING
+    );
+    const allPositiveMoney = lo >= 0;
+    return {
+      yLo: allPositiveMoney ? Math.max(0, lo - pad) : lo - pad,
+      yHi: hi + pad
+    };
+  }
+
   function drawHistoryChart(container, series, spec) {
     container.innerHTML = "";
-    const W = 1080, H = 340, padL = 76, padR = 24, padT = 18, padB = 34;
-    const iw = W - padL - padR, ih = H - padT - padB;
+    const {
+      width: W,
+      height: H,
+      padLeft: padL,
+      padRight: padR,
+      padTop: padT,
+      padBottom: padB
+    } = HISTORY_CHART_GEOMETRY;
+    const plotBottom = H - padB;
+    const iw = W - padL - padR, ih = plotBottom - padT;
     const { times, values } = series;
     const N = values.length - 1;
 
-    let lo = Math.min(...values), hi = Math.max(...values);
-    if (!(hi > lo)) { lo -= Math.max(Math.abs(lo) * .02, 1); hi += Math.max(Math.abs(hi) * .02, 1); }
-    const pad = (hi - lo) * .08;
-    const yLo = lo - pad, yHi = hi + pad;
+    const { yLo, yHi } = historyValueDomain(values);
     const x = i => padL + (i / N) * iw;
     const y = v => padT + ih - ((v - yLo) / (yHi - yLo)) * ih;
     const up = values[N] >= values[0];
@@ -2892,10 +2927,47 @@
       viewBox: `0 0 ${W} ${H}`, class: "chart-svg history-chart-svg", role: "img",
       "aria-label": `Holdings value over the past ${spec.label}`
     });
+    const gradientId = "history-plot-bottom-fade";
+    const maskId = "history-plot-mask";
+    const defs = svgEl("defs", {});
+    const fadeStart = Math.max(padT, plotBottom - HISTORY_PLOT_BOTTOM_FADE_PX);
+    const fadeStartOffset = ((fadeStart - padT) / ih * 100).toFixed(3) + "%";
+    const gradient = svgEl("linearGradient", {
+      id: gradientId,
+      x1: 0,
+      y1: padT,
+      x2: 0,
+      y2: plotBottom,
+      gradientUnits: "userSpaceOnUse"
+    });
+    gradient.appendChild(svgEl("stop", { offset: "0%", "stop-color": "#fff", "stop-opacity": 1 }));
+    gradient.appendChild(svgEl("stop", { offset: fadeStartOffset, "stop-color": "#fff", "stop-opacity": 1 }));
+    gradient.appendChild(svgEl("stop", { offset: "100%", "stop-color": "#fff", "stop-opacity": HISTORY_PLOT_BOTTOM_FADE_MIN_OPACITY }));
+    defs.appendChild(gradient);
+    const mask = svgEl("mask", {
+      id: maskId,
+      x: padL - HISTORY_PLOT_MASK_BLEED_PX,
+      y: padT - HISTORY_PLOT_MASK_BLEED_PX,
+      width: iw + HISTORY_PLOT_MASK_BLEED_PX * 2,
+      height: ih + HISTORY_PLOT_MASK_BLEED_PX,
+      maskUnits: "userSpaceOnUse"
+    });
+    mask.appendChild(svgEl("rect", {
+      x: padL - HISTORY_PLOT_MASK_BLEED_PX,
+      y: padT - HISTORY_PLOT_MASK_BLEED_PX,
+      width: iw + HISTORY_PLOT_MASK_BLEED_PX * 2,
+      height: ih + HISTORY_PLOT_MASK_BLEED_PX,
+      fill: `url(#${gradientId})`
+    }));
+    defs.appendChild(mask);
+    svg.appendChild(defs);
+
+    const plotLayer = svgEl("g", { class: "history-plot-layer", mask: `url(#${maskId})` });
+    svg.appendChild(plotLayer);
 
     for (let i = 0; i <= 4; i++) {
       const v = yLo + ((yHi - yLo) / 4) * i;
-      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: "grid-line" }));
+      plotLayer.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: "grid-line" }));
       const t = svgEl("text", { x: padL - 10, y: y(v) + 4, "text-anchor": "end", class: "axis-text" });
       t.textContent = fmt$(v);
       svg.appendChild(t);
@@ -2911,21 +2983,21 @@
     }
 
     // Dotted reference at the range-start value — Robinhood's "prior close" cue.
-    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(values[0]), y2: y(values[0]), class: "history-baseline" }));
+    plotLayer.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(values[0]), y2: y(values[0]), class: "history-baseline" }));
 
     const pts = values.map((v, i) => ({ x: x(i), y: y(v) }));
     const lineD = smoothLinePath(pts);
-    svg.appendChild(svgEl("path", {
-      d: `${lineD} L ${x(N).toFixed(1)} ${(padT + ih).toFixed(1)} L ${x(0).toFixed(1)} ${(padT + ih).toFixed(1)} Z`,
+    plotLayer.appendChild(svgEl("path", {
+      d: `${lineD} L ${x(N).toFixed(1)} ${plotBottom.toFixed(1)} L ${x(0).toFixed(1)} ${plotBottom.toFixed(1)} Z`,
       class: `history-area ${dir}`
     }));
-    svg.appendChild(svgEl("path", { d: lineD, fill: "none", class: `history-line ${dir}` }));
-    svg.appendChild(svgEl("circle", { cx: x(N), cy: y(values[N]), r: 4, class: `history-dot ${dir}` }));
+    plotLayer.appendChild(svgEl("path", { d: lineD, fill: "none", class: `history-line ${dir}` }));
+    plotLayer.appendChild(svgEl("circle", { cx: x(N), cy: y(values[N]), r: 4, class: `history-dot ${dir}` }));
 
-    const cross = svgEl("line", { x1: 0, x2: 0, y1: padT, y2: padT + ih, class: "crosshair-line", opacity: 0 });
+    const cross = svgEl("line", { x1: 0, x2: 0, y1: padT, y2: plotBottom, class: "crosshair-line", opacity: 0 });
     const marker = svgEl("circle", { cx: 0, cy: 0, r: 3.5, class: `history-dot ${dir}`, opacity: 0 });
-    svg.appendChild(cross);
-    svg.appendChild(marker);
+    plotLayer.appendChild(cross);
+    plotLayer.appendChild(marker);
     svg.addEventListener("mousemove", e => {
       const rect = svg.getBoundingClientRect();
       const mx = (e.clientX - rect.left) / rect.width * W;
@@ -3268,7 +3340,6 @@
     if (!actions) return;
 
     const FLOAT_AFTER = 96;
-    const HIDE_AFTER = 140;
     const DIRECTION_DELTA = 4;
     let lastY = null;
     let pending = false;
@@ -3287,16 +3358,20 @@
       const y = scrollY();
       const previous = lastY;
       const delta = previous == null ? 0 : y - previous;
-      const floating = y > FLOAT_AFTER;
       const hasFocus = actions.contains(document.activeElement);
+      const isPastFloatPoint = y > FLOAT_AFTER;
+      const isFloating = document.body.classList.contains("header-actions-overlay");
+      const isScrollingUp = delta < -DIRECTION_DELTA;
+      const isScrollingDown = delta > DIRECTION_DELTA;
 
-      setFloating(floating);
-      if (floating) {
-        if (previous == null || hasFocus || y < HIDE_AFTER || delta < -DIRECTION_DELTA) {
-          setVisible(true);
-        } else if (delta > DIRECTION_DELTA) {
-          setVisible(false);
-        }
+      if (!isPastFloatPoint) {
+        setFloating(false);
+      } else if (hasFocus || isScrollingUp) {
+        setFloating(true);
+        setVisible(true);
+      } else if (isScrollingDown) {
+        if (isFloating) setVisible(false);
+        else setFloating(false);
       }
 
       lastY = y;
@@ -3315,8 +3390,7 @@
       }
     });
     actions.addEventListener("pointerenter", () => {
-      if (scrollY() > FLOAT_AFTER) {
-        setFloating(true);
+      if (scrollY() > FLOAT_AFTER && document.body.classList.contains("header-actions-overlay")) {
         setVisible(true);
       }
     });

@@ -78,12 +78,11 @@ try {
           </svg>
         </button>
         <button id="ops-menu-toggle" class="menu-toggle" type="button" aria-controls="settings-view" aria-expanded="false" aria-label="Open portfolio settings" title="Open portfolio settings">
-          <svg class="portfolio-clipboard-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M9 6.5V5.3c0-1 .8-1.8 1.8-1.8h2.4c1 0 1.8.8 1.8 1.8v1.2"/>
-            <path d="M8.1 6.5h7.8"/>
-            <path d="M8 6.5H6.8c-1.2 0-2.1.9-2.1 2.1v9.3c0 1.2.9 2.1 2.1 2.1h10.4c1.2 0 2.1-.9 2.1-2.1V8.6c0-1.2-.9-2.1-2.1-2.1H16"/>
-            <path d="M8.4 11.4h7.2"/>
-            <path d="M8.4 15.2h5.5"/>
+          <svg class="portfolio-page-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 3.8h7.2L19 8.6v11.6H7Z"/>
+            <path d="M14 3.8v4.8H19"/>
+            <path d="M10 12.2h6"/>
+            <path d="M10 15.6h4.2"/>
           </svg>
         </button>
       </div>
@@ -229,8 +228,64 @@ try {
       <div class="panel" id="balance-sheet"></div>
     </section>
 
-    <!-- ===== projection ===== -->
-    <section id="projection">
+    <!-- ===== tag donuts (invested assets) ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Charts</h2>
+        <div class="head-right">
+          <span class="section-note" id="donut-scope-note"></span>
+          <label class="toggle">
+            <input type="checkbox" class="tax-toggle">
+            <span class="track"></span>
+            <span class="t-label">Post-tax</span>
+          </label>
+        </div>
+      </div>
+      <div class="donut-grid" id="donut-grid"></div>
+    </section>
+
+    <!-- ===== bars & crosstabs ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Weight &amp; composition</h2>
+        <span class="section-note">invested assets · tag × tag</span>
+      </div>
+      <div class="two-col composition-grid">
+        <div class="panel">
+          <h3 class="panel-title">Assets by ticker</h3>
+          <div id="ticker-bars"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Account types per institution</h3>
+          <div id="xtab-institution-account"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== debts breakdown (only when debts exist) ===== -->
+    <section id="debt-section" style="display:none;">
+      <div class="section-head">
+        <h2>Debts</h2>
+        <span class="section-note">balances owed · excluded from the totals above</span>
+      </div>
+      <div class="two-col debt-grid">
+        <div class="panel">
+          <h3 class="panel-title">Debt by call-sign</h3>
+          <div id="debt-bars"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Debt by institution</h3>
+          <div id="debt-inst-bars"></div>
+        </div>
+        <div class="panel leverage-card">
+          <h3 class="panel-title">Leverage</h3>
+          <div id="debt-leverage"></div>
+        </div>
+      </div>
+    </section>
+
+     <!-- ===== projection ===== -->
+     <section id="projection">
       <div class="section-head">
         <h2>Projection</h2>
         <div class="head-right projection-head-controls">
@@ -293,61 +348,6 @@ try {
       </div>
     </section>
 
-    <!-- ===== tag donuts (invested assets) ===== -->
-    <section>
-      <div class="section-head">
-        <h2>Invested assets, by every tag</h2>
-        <div class="head-right">
-          <span class="section-note" id="donut-scope-note"></span>
-          <label class="toggle">
-            <input type="checkbox" class="tax-toggle">
-            <span class="track"></span>
-            <span class="t-label">Post-tax</span>
-          </label>
-        </div>
-      </div>
-      <div class="donut-grid" id="donut-grid"></div>
-    </section>
-
-    <!-- ===== bars & crosstabs ===== -->
-    <section>
-      <div class="section-head">
-        <h2>Weight &amp; composition</h2>
-        <span class="section-note">invested assets · tag × tag</span>
-      </div>
-      <div class="two-col composition-grid">
-        <div class="panel">
-          <h3 class="panel-title">Assets by ticker</h3>
-          <div id="ticker-bars"></div>
-        </div>
-        <div class="panel">
-          <h3 class="panel-title">Account types per institution</h3>
-          <div id="xtab-institution-account"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===== debts breakdown (only when debts exist) ===== -->
-    <section id="debt-section" style="display:none;">
-      <div class="section-head">
-        <h2>Debts</h2>
-        <span class="section-note">balances owed · excluded from the totals above</span>
-      </div>
-      <div class="two-col debt-grid">
-        <div class="panel">
-          <h3 class="panel-title">Debt by call-sign</h3>
-          <div id="debt-bars"></div>
-        </div>
-        <div class="panel">
-          <h3 class="panel-title">Debt by institution</h3>
-          <div id="debt-inst-bars"></div>
-        </div>
-        <div class="panel leverage-card">
-          <h3 class="panel-title">Leverage</h3>
-          <div id="debt-leverage"></div>
-        </div>
-      </div>
-    </section>
 
     <!-- ===== planet display ===== -->
     <section class="planet-stage" aria-labelledby="planet-title">
@@ -362,7 +362,7 @@ try {
     <!-- ===== final spatial explorations ===== -->
     <section>
       <div class="section-head">
-        <h2>Vehicles</h2>
+        <h2>Holdings</h2>
         <div class="head-right biome-head-controls">
           <span class="section-note" id="biome-mode-note">each holding sized by value and grown from ledger semantics</span>
           <button type="button" id="biome-whistle" class="whistle-toggle" aria-pressed="false" aria-label="Cycle terrarium layout" title="Cycle terrarium layout">

@@ -9,6 +9,7 @@ const dataSource = fs.readFileSync(path.join(__dirname, "data.js"), "utf8");
 const pricesSource = fs.readFileSync(path.join(__dirname, "prices.js"), "utf8");
 const uiSource = fs.readFileSync(path.join(__dirname, "ui.js"), "utf8");
 const indexSource = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
 
 /* ---------- static wiring ---------- */
 
@@ -17,6 +18,62 @@ assert.match(indexSource, /id="history-ranges"/, "range selector container exist
 assert.match(uiSource, /renderHistorySection\(\);/, "renderAll draws the history section");
 assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own storage key");
 assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
+assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
+assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padBottom: 34[\s\S]*?\}\);/, "history chart geometry is centralized");
+assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");
+assert.match(uiSource, /y2: plotBottom,\s*gradientUnits: "userSpaceOnUse"/, "history fade gradient terminates at the plot bottom");
+assert.match(uiSource, /mask: `url\(#\$\{maskId\}\)`/, "history plot layer uses the geometry-tied SVG mask");
+
+function extractUiFunction(name) {
+  const start = uiSource.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} exists`);
+  const bodyStart = uiSource.indexOf("{", start);
+  let depth = 0;
+  for (let i = bodyStart; i < uiSource.length; i++) {
+    if (uiSource[i] === "{") depth++;
+    if (uiSource[i] === "}") depth--;
+    if (depth === 0) return uiSource.slice(start, i + 1);
+  }
+  throw new Error(`could not extract ${name}`);
+}
+
+function extractUiConst(name) {
+  const match = uiSource.match(new RegExp(`const ${name} = [^;]+;`));
+  assert.ok(match, `${name} exists`);
+  return match[0];
+}
+
+function extractCssRule(selector) {
+  const start = stylesSource.indexOf(`${selector} {`);
+  assert.notEqual(start, -1, `${selector} rule exists`);
+  const bodyStart = stylesSource.indexOf("{", start);
+  let depth = 0;
+  for (let i = bodyStart; i < stylesSource.length; i++) {
+    if (stylesSource[i] === "{") depth++;
+    if (stylesSource[i] === "}") depth--;
+    if (depth === 0) return stylesSource.slice(start, i + 1);
+  }
+  throw new Error(`could not extract CSS rule ${selector}`);
+}
+
+const historyChartRule = extractCssRule(".history-chart");
+assert.doesNotMatch(historyChartRule, /(?:-webkit-)?mask-image|mask-composite/, "history chart wrapper does not own the fade mask");
+assert.doesNotMatch(historyChartRule, /--history-(fade-band|label-safe)/, "history fade is not controlled by wrapper percentages");
+
+const domainSandbox = { Math };
+vm.runInNewContext([
+  extractUiConst("HISTORY_Y_DOMAIN_PADDING_RATIO"),
+  extractUiConst("HISTORY_Y_DOMAIN_MIN_PADDING_RATIO"),
+  extractUiConst("HISTORY_Y_DOMAIN_MIN_PADDING"),
+  extractUiFunction("historyValueDomain"),
+  "globalThis.historyValueDomain = historyValueDomain;"
+].join("\n"), domainSandbox, { filename: "ui.js#historyValueDomain" });
+const paddedDomain = domainSandbox.historyValueDomain([100, 110, 120]);
+assert.ok(paddedDomain.yLo < 100 && paddedDomain.yHi > 120, "history y-domain expands beyond data min/max");
+assert.ok(paddedDomain.yHi - paddedDomain.yLo >= (120 - 100) * 2.25, "history y-domain intentionally compresses line variation");
+assert.equal(domainSandbox.historyValueDomain([0, 1]).yLo, 0, "positive money history domain preserves zero floor");
+const flatDomain = domainSandbox.historyValueDomain([500, 500]);
+assert.ok(flatDomain.yLo < 500 && flatDomain.yHi > 500, "flat positive history still gets visible domain padding");
 
 /* ---------- Prices.history (no network for USD; parsing via stubbed fetch) ---------- */
 
