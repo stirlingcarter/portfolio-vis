@@ -2361,6 +2361,7 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
     top: 8px;
     right: 8px;
     left: auto;
+    width: auto;
     max-width: calc(100vw - 16px);
     padding: 5px 6px;
     border-radius: 22px;
