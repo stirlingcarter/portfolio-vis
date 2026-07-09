@@ -3192,13 +3192,24 @@
 
     // Assets the price series can't cover — non-ticker positions plus holdings
     // whose history failed to load — ride on top as a flat add-on at their
-    // current value, so the line (and readout) tracks TOTAL assets and matches
-    // the hero's assets figure instead of only the auto-priced subset.
+    // current value. Then the final point is anchored to Data.assetTotal(),
+    // the same source as the hero's assets headline. That second flat
+    // adjustment absorbs live-history-vs-ledger-value drift, so the chart's
+    // current readout never disagrees with the headline just because prices
+    // refreshed in one place and stamped ledger values did not.
     const pricedByHistory = new Set(series.included);
     const flatAssetValue = Data.all()
       .filter(inv => Data.isAsset(inv) && !pricedByHistory.has(inv))
       .reduce((s, inv) => s + Data.presentValue(inv, ui.taxOn), 0);
     if (flatAssetValue) series.values = series.values.map(v => v + flatAssetValue);
+    const currentAssetTotal = Data.assetTotal(ui.taxOn);
+    const currentChartValue = series.values[series.values.length - 1];
+    const headlineAnchorAdjustment = Number.isFinite(currentAssetTotal) && Number.isFinite(currentChartValue)
+      ? currentAssetTotal - currentChartValue
+      : 0;
+    if (Math.abs(headlineAnchorAdjustment) >= .005) {
+      series.values = series.values.map(v => v + headlineAnchorAdjustment);
+    }
 
     const chart = $("#history-chart");
     if (!series.included.length) {

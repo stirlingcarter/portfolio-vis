@@ -23,6 +23,9 @@ assert.match(indexSource, /plus other assets held flat at current value/, "histo
 assert.match(uiSource, /<span class="tt-k">total assets<\/span> <span><\/span>/, "history tooltip skeleton reports total assets");
 assert.match(uiSource, /Data\.isAsset\(inv\) && !pricedByHistory\.has\(inv\)/, "unpriced assets ride on top of the series");
 assert.match(uiSource, /series\.values = series\.values\.map\(v => v \+ flatAssetValue\)/, "flat add-on shifts every point so the line tracks total assets");
+assert.match(uiSource, /const currentAssetTotal = Data\.assetTotal\(ui\.taxOn\);/, "history chart anchors to the same asset total as the headline");
+assert.match(uiSource, /currentAssetTotal - currentChartValue/, "history chart absorbs live-price vs stamped-ledger drift");
+assert.match(uiSource, /series\.values = series\.values\.map\(v => v \+ headlineAnchorAdjustment\)/, "history chart right edge matches headline assets");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
 assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padLeft: 0,\s*padRight: 0,[\s\S]*?\}\);/, "history chart has no horizontal padding (full-bleed line)");
 assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");

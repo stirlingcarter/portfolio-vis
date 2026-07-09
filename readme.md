@@ -249,7 +249,10 @@ The **Holdings history** section is a Robinhood-style single smooth line of
 `current shares × price(t)` per auto-priced ticker on a shared time grid,
 then adds every asset it *can't* price through time — non-ticker positions
 and holdings whose history failed to load — as a flat offset at current
-value, so the line (and its readout) matches the hero's total-assets figure.
+value. The latest point is then anchored to `Data.assetTotal(ui.taxOn)` — the
+same value used by the hero's assets headline — by applying one more flat
+offset for any live-history-vs-stamped-ledger drift, so the line (and its
+readout) matches the hero's total-assets figure.
 It is a hypothetical ("what these holdings were worth"), not an account
 statement — past buys/sells are not modeled. Auto-priced participation
 requires `looksTradable` (plus fixed `USD`, which resolves as a flat `$1`
