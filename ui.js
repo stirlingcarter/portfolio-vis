@@ -65,7 +65,8 @@
   const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
   const HISTORY_GROUP_ALL = "__all__";
   const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
-  const HISTORY_GROUP_LARGEST_RATIO = .08;
+  const HISTORY_GROUP_HIDE_STATES = [0, .03, .08, .12, .20];
+  const HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD = .08;
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
@@ -103,7 +104,7 @@
     lastPriceRefreshAt: 0,
     historyRange: "24h",    // holdings-history look-back (keys in Prices.HISTORY_RANGES)
     historyGroupBy: HISTORY_GROUP_ALL,
-    historyOnlyLargest: true
+    historyHideThreshold: HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -181,6 +182,24 @@
   function coerceHistoryGroupBy(value) {
     if (value === HISTORY_GROUP_ALL) return HISTORY_GROUP_ALL;
     return HISTORY_GROUP_DIMS.includes(value) ? value : HISTORY_GROUP_ALL;
+  }
+
+  function coerceHistoryHideThreshold(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD;
+    return HISTORY_GROUP_HIDE_STATES.reduce((best, state) =>
+      Math.abs(state - n) < Math.abs(best - n) ? state : best, HISTORY_GROUP_HIDE_STATES[0]);
+  }
+
+  function nextHistoryHideThreshold(value) {
+    const current = coerceHistoryHideThreshold(value);
+    const idx = HISTORY_GROUP_HIDE_STATES.indexOf(current);
+    return HISTORY_GROUP_HIDE_STATES[(idx + 1) % HISTORY_GROUP_HIDE_STATES.length];
+  }
+
+  function historyHideLabel(value) {
+    const threshold = coerceHistoryHideThreshold(value);
+    return threshold <= 0 ? "Hiding off" : `Hiding ${Math.round(threshold * 100)}%`;
   }
 
   function nextBiomeModeKey(key) {
@@ -377,7 +396,12 @@
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
     if ("historyRange" in state) ui.historyRange = coerceHistoryRange(state.historyRange);
     if ("historyGroupBy" in state) ui.historyGroupBy = coerceHistoryGroupBy(state.historyGroupBy);
-    if ("historyOnlyLargest" in state) ui.historyOnlyLargest = state.historyOnlyLargest !== false;
+    if ("historyHideThreshold" in state) {
+      ui.historyHideThreshold = coerceHistoryHideThreshold(state.historyHideThreshold);
+    } else if ("historyOnlyLargest" in state) {
+      // Back-compat for the previous checkbox setting.
+      ui.historyHideThreshold = state.historyOnlyLargest === false ? 0 : HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD;
+    }
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
@@ -410,7 +434,7 @@
       heroMetric: heroMetricFor(ui.heroMetric).key,
       historyRange: coerceHistoryRange(ui.historyRange),
       historyGroupBy: coerceHistoryGroupBy(ui.historyGroupBy),
-      historyOnlyLargest: ui.historyOnlyLargest !== false,
+      historyHideThreshold: coerceHistoryHideThreshold(ui.historyHideThreshold),
       biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
@@ -3306,12 +3330,15 @@
     });
   }
 
-  function syncGroupedHistoryLargestToggle() {
-    const toggle = $("#group-history-only-largest");
-    if (!toggle) return;
-    toggle.checked = ui.historyOnlyLargest !== false;
-    const label = $("#group-history-only-largest-label");
-    if (label) label.textContent = toggle.checked ? "Only largest" : "Show all";
+  function syncGroupedHistoryHidingButton() {
+    const btn = $("#group-history-hiding");
+    if (!btn) return;
+    ui.historyHideThreshold = coerceHistoryHideThreshold(ui.historyHideThreshold);
+    btn.textContent = historyHideLabel(ui.historyHideThreshold);
+    btn.setAttribute("aria-pressed", String(ui.historyHideThreshold > 0));
+    btn.title = ui.historyHideThreshold > 0
+      ? `Hide lines below ${Math.round(ui.historyHideThreshold * 100)}% of the largest current group`
+      : "Show every grouped history line";
   }
 
   function historyGroupValue(inv, groupBy) {
@@ -3367,12 +3394,13 @@
   }
 
   function visibleGroupedHistoryLines(lines, groupBy) {
-    if (groupBy === HISTORY_GROUP_ALL || ui.historyOnlyLargest === false || lines.length <= 1) {
+    const thresholdRatio = coerceHistoryHideThreshold(ui.historyHideThreshold);
+    if (groupBy === HISTORY_GROUP_ALL || thresholdRatio <= 0 || lines.length <= 1) {
       return { visible: lines, hidden: [] };
     }
     const largest = Math.max(...lines.map(s => Math.abs(s.current)));
     if (!Number.isFinite(largest) || largest <= 0) return { visible: lines, hidden: [] };
-    const threshold = largest * HISTORY_GROUP_LARGEST_RATIO;
+    const threshold = largest * thresholdRatio;
     const visible = lines.filter(s => Math.abs(s.current) >= threshold);
     return { visible: visible.length ? visible : lines.slice(0, 1), hidden: lines.filter(s => Math.abs(s.current) < threshold) };
   }
@@ -3478,9 +3506,10 @@
     section.style.display = "block";
     const spec = historyRangeSpec();
     ui.historyGroupBy = coerceHistoryGroupBy(ui.historyGroupBy);
+    ui.historyHideThreshold = coerceHistoryHideThreshold(ui.historyHideThreshold);
     renderGroupedHistoryRangeChips(spec);
     renderGroupedHistoryGroupChips(ui.historyGroupBy);
-    syncGroupedHistoryLargestToggle();
+    syncGroupedHistoryHidingButton();
 
     const seriesByTicker = new Map();
     let asOf = Infinity;
@@ -3517,7 +3546,7 @@
     const notes = [];
     if (hiddenLines.length) {
       const largest = Math.max(...lines.map(s => Math.abs(s.current)));
-      notes.push(`Only largest: hiding ${hiddenLines.length} line${hiddenLines.length === 1 ? "" : "s"} below ${Math.round(HISTORY_GROUP_LARGEST_RATIO * 100)}% of ${fmt$(largest)}`);
+      notes.push(`Hiding ${Math.round(ui.historyHideThreshold * 100)}%: ${hiddenLines.length} line${hiddenLines.length === 1 ? "" : "s"} below ${fmt$(largest * ui.historyHideThreshold)} (${fmt$(largest)} largest)`);
     }
     if (flatSyms.length) notes.push(`Held flat at current value (no ${spec.label} history): ${flatSyms.join(", ")}`);
     if (historyFetchKey) notes.push("Loading more price history…");
@@ -3836,13 +3865,13 @@
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
-    const groupHistoryOnlyLargest = $("#group-history-only-largest");
+    const groupHistoryHiding = $("#group-history-hiding");
     const privacyToggle = $("#privacy-toggle");
     const themeModeToggle = $("#theme-mode-toggle");
     const projectionControlsPanel = $(".proj-controls-panel");
     syncProjectionControlsToDom();
     syncLedgerGroupingControl();
-    syncGroupedHistoryLargestToggle();
+    syncGroupedHistoryHidingButton();
     if (projectionControlsPanel) {
       projectionControlsPanel.addEventListener("toggle", () => {
         ui.projectionControlsOpen = projectionControlsPanel.open;
@@ -3873,9 +3902,9 @@
       saveUiState();
       renderAll();
     });
-    if (groupHistoryOnlyLargest) {
-      groupHistoryOnlyLargest.addEventListener("change", () => {
-        ui.historyOnlyLargest = groupHistoryOnlyLargest.checked;
+    if (groupHistoryHiding) {
+      groupHistoryHiding.addEventListener("click", () => {
+        ui.historyHideThreshold = nextHistoryHideThreshold(ui.historyHideThreshold);
         saveUiState();
         renderGroupedHistorySection();
       });

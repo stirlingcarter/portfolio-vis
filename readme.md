@@ -273,11 +273,12 @@ to **All** (one total-assets line) and can split the same series by the asset
 ledger dimensions: Institution, Ticker, Account Type, Vehicle (`Category`), or
 Vehicle Category (`Subcategory`). Each grouped line is anchored to that group's
 current ledger asset total, with unpriced holdings flat on top just like the
-hero chart. The **Only largest** toggle is on by default; when a split is active
-it hides groups whose current value is under 8% of the largest current group,
-keeping tiny flat lines off the bottom of the graph. Turning it off renders all
-groups. The range chips share `ui.historyRange`, so changing 24H/1W/etc. keeps
-the hero and grouped charts in sync.
+hero chart. The single **Hiding** button cycles through Off, 3%, 8%, 12%, and
+20% thresholds (default 8%); when a split is active it hides groups whose
+current value falls below the selected percentage of the largest current group,
+keeping tiny flat lines off the bottom of the graph. The range chips share
+`ui.historyRange`, so changing 24H/1W/etc. keeps the hero and grouped charts in
+sync.
 
 Data comes from the same two keyless sources as live pricing, one request per
 ticker per range (`Prices.history` / `Prices.historyMany`,

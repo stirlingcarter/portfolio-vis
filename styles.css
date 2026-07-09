@@ -1211,12 +1211,25 @@ input[type="range"]::-moz-range-thumb {
 .group-history-groups {
   max-width: min(100%, 740px);
 }
-.group-history-largest-toggle {
+.group-history-hiding-button {
   flex: 0 0 auto;
-  padding: 5px 8px;
-}
-.group-history-largest-toggle .t-label {
+  padding: 6px 10px;
+  font-family: var(--mono);
   font-size: clamp(.64rem, 1.2vw, .68rem);
+  line-height: 1.15;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.9);
+  background: rgba(8, 11, 9, .42);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  text-shadow: 0 1px 8px rgba(0,0,0,.55);
+}
+.group-history-hiding-button[aria-pressed="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(255,255,255,.18), color-mix(in srgb, var(--coin) 46%, transparent));
+  border-color: rgba(255,255,255,.28);
+  font-weight: 700;
 }
 .group-history-chart {
   position: relative;
@@ -2601,7 +2614,7 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .group-history-groups {
     justify-content: flex-start;
   }
-  .group-history-largest-toggle {
+  .group-history-hiding-button {
     align-self: flex-start;
   }
   .group-history-chart .chart-svg {
