@@ -227,6 +227,23 @@ try {
       <div class="panel" id="balance-sheet"></div>
     </section>
 
+    <!-- ===== grouped history, same edge-to-edge language as the hero chart ===== -->
+    <section id="group-history-section" class="group-history" style="display:none;" aria-label="Total assets history grouped by ledger dimensions">
+      <div class="section-head group-history-head">
+        <h2>Asset history</h2>
+        <div class="head-right group-history-head-controls">
+          <span class="section-note">same price history · split by ledger tags</span>
+          <div class="history-ranges group-history-groups" id="group-history-groups" role="group" aria-label="History graph grouping"></div>
+        </div>
+      </div>
+      <div id="group-history-chart" class="group-history-chart"></div>
+      <div id="group-history-legend" class="group-history-legend"></div>
+      <div class="group-history-controls">
+        <div class="history-ranges" id="group-history-ranges" role="group" aria-label="Grouped history look-back range"></div>
+      </div>
+      <div id="group-history-status" class="history-status" role="status" aria-live="polite"></div>
+    </section>
+
     <!-- ===== tag donuts (invested assets) ===== -->
     <section>
       <div class="section-head">

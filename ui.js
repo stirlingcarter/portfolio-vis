@@ -63,6 +63,8 @@
   const LEDGER_UNGROUPED = "__ungrouped__";
   // Table grouping follows the ledger's tag-like schema fields.
   const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
+  const HISTORY_GROUP_ALL = "__all__";
+  const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
@@ -98,7 +100,8 @@
     ledgerSort: "ID",
     ledgerGroupBy: "Institution",
     lastPriceRefreshAt: 0,
-    historyRange: "24h"     // holdings-history look-back (keys in Prices.HISTORY_RANGES)
+    historyRange: "24h",    // holdings-history look-back (keys in Prices.HISTORY_RANGES)
+    historyGroupBy: HISTORY_GROUP_ALL
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -171,6 +174,11 @@
   function coerceLedgerGroupBy(value) {
     if (value === LEDGER_UNGROUPED) return LEDGER_UNGROUPED;
     return LEDGER_GROUP_DIMS.includes(value) ? value : "Institution";
+  }
+
+  function coerceHistoryGroupBy(value) {
+    if (value === HISTORY_GROUP_ALL) return HISTORY_GROUP_ALL;
+    return HISTORY_GROUP_DIMS.includes(value) ? value : HISTORY_GROUP_ALL;
   }
 
   function nextBiomeModeKey(key) {
@@ -366,6 +374,7 @@
     }
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
     if ("historyRange" in state) ui.historyRange = coerceHistoryRange(state.historyRange);
+    if ("historyGroupBy" in state) ui.historyGroupBy = coerceHistoryGroupBy(state.historyGroupBy);
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
@@ -397,6 +406,7 @@
       },
       heroMetric: heroMetricFor(ui.heroMetric).key,
       historyRange: coerceHistoryRange(ui.historyRange),
+      historyGroupBy: coerceHistoryGroupBy(ui.historyGroupBy),
       biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
@@ -2869,6 +2879,7 @@
       if (historyFetchKey === key) historyFetchKey = null;
     }
     renderHistorySection();
+    renderGroupedHistorySection();
   }
 
   function setHistoryStatus(text) {
@@ -3244,6 +3255,245 @@
     ensureHistorySeries();
   }
 
+  function setGroupedHistoryStatus(text) {
+    const node = $("#group-history-status");
+    if (node) {
+      node.textContent = text || "";
+      node.style.display = text ? "" : "none";
+    }
+  }
+
+  function renderGroupedHistoryRangeChips(spec) {
+    const wrap = $("#group-history-ranges");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    Prices.HISTORY_RANGES.forEach(r => {
+      const btn = el("button", "history-range-btn", r.label);
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", String(r.key === spec.key));
+      btn.title = `Look back ${r.label}`;
+      btn.addEventListener("click", () => {
+        if (ui.historyRange === r.key) return;
+        ui.historyRange = r.key;
+        saveUiState();
+        renderHistorySection();
+        renderGroupedHistorySection();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function renderGroupedHistoryGroupChips(groupBy) {
+    const wrap = $("#group-history-groups");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    [[HISTORY_GROUP_ALL, "All"], ...HISTORY_GROUP_DIMS.map(dim => [dim, dimLabel(dim)])].forEach(([key, label]) => {
+      const btn = el("button", "history-range-btn", label);
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", String(key === groupBy));
+      btn.title = key === HISTORY_GROUP_ALL ? "Show one total assets line" : `Split lines by ${label}`;
+      btn.addEventListener("click", () => {
+        if (ui.historyGroupBy === key) return;
+        ui.historyGroupBy = key;
+        saveUiState();
+        renderGroupedHistorySection();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function historyGroupValue(inv, groupBy) {
+    if (groupBy === HISTORY_GROUP_ALL) return "All assets";
+    if (groupBy === "Ticker") return String(inv.Ticker || "—").trim().toUpperCase() || "—";
+    return cleanTag(inv[groupBy]);
+  }
+
+  function groupedHistoryLineSeries(seriesByTicker, spec, groupBy, groupKey, groupAssets, asOf) {
+    const inGroup = inv => Data.isAsset(inv) && historyGroupValue(inv, groupBy) === groupKey;
+    const moving = Data.historyValueSeries(seriesByTicker, {
+      start: asOf - spec.ms,
+      end: asOf,
+      points: HISTORY_GRID_POINTS,
+      taxOn: ui.taxOn,
+      filter: inv => isHistoryHolding(inv) && inGroup(inv)
+    });
+    const pricedByHistory = new Set(moving.included);
+    const flatValue = groupAssets
+      .filter(inv => !pricedByHistory.has(inv))
+      .reduce((s, inv) => s + Data.presentValue(inv, ui.taxOn), 0);
+    const currentTotal = groupAssets.reduce((s, inv) => s + Data.presentValue(inv, ui.taxOn), 0);
+    let values = moving.values.map(v => v + flatValue);
+    const last = values[values.length - 1];
+    const anchor = Number.isFinite(currentTotal) && Number.isFinite(last) ? currentTotal - last : 0;
+    if (Math.abs(anchor) >= .005) values = values.map(v => v + anchor);
+    return {
+      key: groupKey,
+      label: groupKey,
+      times: moving.times,
+      values,
+      current: currentTotal,
+      included: moving.included,
+      excluded: moving.excluded
+    };
+  }
+
+  function groupedHistorySeries(seriesByTicker, spec, groupBy, asOf) {
+    const assets = Data.all().filter(Data.isAsset);
+    if (groupBy === HISTORY_GROUP_ALL) {
+      return [groupedHistoryLineSeries(seriesByTicker, spec, groupBy, "All assets", assets, asOf)];
+    }
+    const groups = new Map();
+    assets.forEach(inv => {
+      const key = historyGroupValue(inv, groupBy);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(inv);
+    });
+    return [...groups.entries()]
+      .map(([key, groupAssets]) => groupedHistoryLineSeries(seriesByTicker, spec, groupBy, key, groupAssets, asOf))
+      .filter(s => Math.abs(s.current) > .005)
+      .sort((a, b) => Math.abs(b.current) - Math.abs(a.current));
+  }
+
+  function drawGroupedHistoryChart(container, legend, lines, spec) {
+    container.innerHTML = "";
+    if (legend) legend.innerHTML = "";
+    const { width: W, height: H, padLeft: padL, padRight: padR, padTop: padT, padBottom: padB } = HISTORY_CHART_GEOMETRY;
+    const plotBottom = H - padB;
+    const iw = W - padL - padR, ih = plotBottom - padT;
+    const allValues = lines.flatMap(s => s.values);
+    const { yLo, yHi } = historyValueDomain(allValues.length ? allValues : [0, 1]);
+    const N = lines[0].values.length - 1;
+    const x = i => padL + (i / N) * iw;
+    const y = v => padT + ih - ((v - yLo) / (yHi - yLo)) * ih;
+
+    const svg = svgEl("svg", {
+      viewBox: `0 0 ${W} ${H}`,
+      class: "chart-svg group-history-chart-svg",
+      role: "img",
+      "aria-label": `Total assets history grouped over the past ${spec.label}`
+    });
+    const lineLayer = svgEl("g", { class: "group-history-line-layer" });
+    svg.appendChild(lineLayer);
+
+    lines.forEach((series, idx) => {
+      const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
+      const pts = series.values.map((v, i) => ({ x: x(i), y: y(v) }));
+      lineLayer.appendChild(svgEl("path", {
+        d: smoothLinePath(pts),
+        fill: "none",
+        "vector-effect": "non-scaling-stroke",
+        class: "group-history-line",
+        style: `--group-line:${color}`,
+        opacity: idx < 10 ? 1 : .55
+      }));
+      const last = pts[pts.length - 1];
+      lineLayer.appendChild(svgEl("circle", {
+        cx: last.x,
+        cy: last.y,
+        r: 3.2,
+        class: "group-history-dot",
+        style: `--group-line:${color}`,
+        opacity: idx < 10 ? 1 : .65
+      }));
+    });
+
+    const cross = el("div", "history-scrub-cross group-history-cross");
+    cross.style.top = (padT / H * 100) + "%";
+    cross.style.height = ((plotBottom - padT) / H * 100) + "%";
+    container.appendChild(svg);
+    container.appendChild(cross);
+
+    let raf = 0, clientX = 0, clientY = 0, activeIdx = -1;
+    const applyScrub = () => {
+      raf = 0;
+      const rect = svg.getBoundingClientRect();
+      const mx = (clientX - rect.left) / rect.width * W;
+      const i = Math.round(clamp((mx - padL) / iw, 0, 1) * N);
+      if (i === activeIdx) { moveTip(clientX, clientY); return; }
+      activeIdx = i;
+      cross.style.transform = `translate3d(${(x(i) / W * rect.width).toFixed(1)}px, 0, 0)`;
+      cross.style.opacity = 1;
+      const rows = lines.slice(0, 8).map(series => {
+        const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
+        return `<br><span class="tt-mark" style="color:${color}">●</span><span class="tt-k">${series.label}</span> ${fmt$full(series.values[i])}`;
+      }).join("");
+      showTip(`<b>${fmtHistoryTime(lines[0].times[i], spec, true)}</b>${rows}${lines.length > 8 ? "<br><span class='tt-k'>…</span>" : ""}`, clientX, clientY);
+    };
+    const scrub = e => {
+      clientX = e.clientX; clientY = e.clientY;
+      if (!raf) raf = requestAnimationFrame(applyScrub);
+    };
+    const end = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      activeIdx = -1;
+      cross.style.opacity = 0;
+      hideTip();
+    };
+    svg.addEventListener("pointermove", scrub);
+    svg.addEventListener("pointerleave", end);
+    svg.addEventListener("pointercancel", end);
+
+    if (legend) {
+      lines.slice(0, 12).forEach(series => {
+        const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
+        const item = el("div", "group-history-legend-item");
+        item.innerHTML = `<span class="swatch" style="background:${color}"></span><span>${series.label}</span><b>${fmt$(series.current)}</b>`;
+        legend.appendChild(item);
+      });
+      if (lines.length > 12) legend.appendChild(el("div", "group-history-legend-more", `+${lines.length - 12} more`));
+    }
+  }
+
+  function renderGroupedHistorySection() {
+    const section = $("#group-history-section");
+    if (!section) return;
+    const assets = Data.all().filter(Data.isAsset);
+    if (!assets.length) {
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "block";
+    const spec = historyRangeSpec();
+    ui.historyGroupBy = coerceHistoryGroupBy(ui.historyGroupBy);
+    renderGroupedHistoryRangeChips(spec);
+    renderGroupedHistoryGroupChips(ui.historyGroupBy);
+
+    const seriesByTicker = new Map();
+    let asOf = Infinity;
+    historyTickers().forEach(sym => {
+      const entry = freshHistoryEntry(sym, spec);
+      if (!entry) return;
+      seriesByTicker.set(sym, entry.points);
+      asOf = Math.min(asOf, entry.fetchedAt);
+    });
+    if (!Number.isFinite(asOf)) asOf = Date.now();
+    assets.forEach(inv => {
+      const sym = String(inv.Ticker || "").trim().toUpperCase();
+      if (fixedPriceForTicker(sym) != null && !seriesByTicker.has(sym)) {
+        seriesByTicker.set(sym, [[asOf - spec.ms, 1], [asOf, 1]]);
+      }
+    });
+
+    const lines = groupedHistorySeries(seriesByTicker, spec, ui.historyGroupBy, asOf);
+    const chart = $("#group-history-chart");
+    const legend = $("#group-history-legend");
+    if (!lines.length) {
+      if (chart) chart.innerHTML = "";
+      if (legend) legend.innerHTML = "";
+      setGroupedHistoryStatus(historyFetchKey ? "Loading price history…" : "No asset history available yet.");
+      ensureHistorySeries();
+      return;
+    }
+    drawGroupedHistoryChart(chart, legend, lines, spec);
+
+    const flatSyms = [...new Set(lines.flatMap(s => s.excluded.map(inv => String(inv.Ticker || "").trim().toUpperCase()).filter(Boolean)))];
+    const notes = [];
+    if (flatSyms.length) notes.push(`Held flat at current value (no ${spec.label} history): ${flatSyms.join(", ")}`);
+    if (historyFetchKey) notes.push("Loading more price history…");
+    setGroupedHistoryStatus(notes.join(" · "));
+    ensureHistorySeries();
+  }
+
   function seriesTickerUsed(series, sym) {
     return series.included.some(inv => String(inv.Ticker || "").trim().toUpperCase() === sym);
   }
@@ -3373,6 +3623,7 @@
     }
     renderBalanceSheet();
     renderHistorySection();
+    renderGroupedHistorySection();
 
     // Composition is scoped to INVESTED ASSETS so donut/bar totals equal what's
     // invested (not net worth). Debts get their own section below.

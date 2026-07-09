@@ -1192,6 +1192,96 @@ input[type="range"]::-moz-range-thumb {
 }
 .history-status:empty { display: none; }
 
+/* ---------- grouped asset history ---------- */
+
+.group-history {
+  position: relative;
+  margin-top: clamp(54px, 8svh, 94px);
+  margin-bottom: clamp(48px, 7svh, 82px);
+}
+.group-history-head {
+  position: relative;
+  z-index: 3;
+  margin-bottom: 8px;
+}
+.group-history-head-controls {
+  align-items: center;
+  gap: 10px;
+}
+.group-history-groups {
+  max-width: min(100%, 740px);
+}
+.group-history-chart {
+  position: relative;
+  z-index: 1;
+  width: 100vw;
+  max-width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  overflow: hidden;
+}
+.group-history-chart-svg {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  opacity: .78;
+  touch-action: none;
+}
+.group-history-line {
+  stroke: var(--group-line);
+  stroke-width: 2.6px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--group-line) 32%, transparent));
+}
+.group-history-dot {
+  fill: var(--group-line);
+  stroke: var(--canvas);
+  stroke-width: 2;
+}
+.group-history-cross {
+  z-index: 3;
+}
+.group-history-legend {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  max-width: min(100%, 980px);
+  margin: -8px auto 0;
+  padding-inline: 10px;
+  font-family: var(--mono);
+  font-size: .66rem;
+  color: var(--muted);
+}
+.group-history-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.group-history-legend-item .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.group-history-legend-item b {
+  color: var(--faint);
+  font-weight: 500;
+}
+.group-history-legend-more {
+  color: var(--faint);
+}
+.group-history-controls {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
 /* ---------- donut grid ---------- */
 
 .donut-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
@@ -2489,6 +2579,32 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .history-status {
     font-size: .58rem;
     line-height: 1.35;
+  }
+  .group-history {
+    margin-top: 42px;
+    margin-bottom: 44px;
+  }
+  .group-history-head {
+    align-items: flex-start;
+  }
+  .group-history-head-controls {
+    width: 100%;
+    align-items: flex-start;
+  }
+  .group-history-groups {
+    justify-content: flex-start;
+  }
+  .group-history-chart .chart-svg {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .group-history-legend {
+    justify-content: flex-start;
+    font-size: .6rem;
+    margin-top: -4px;
+  }
+  .group-history-controls {
+    margin-top: 14px;
   }
   .planet-visual { min-height: 320px; padding: 22px 0 16px; }
   .hero-orbit { --orbit-scale: .66; width: min(100%, 360px); }

@@ -267,6 +267,15 @@ pointer events (`pointerdown`/`pointermove` + pointer capture,
 `touch-action: none`) let a single press-and-drag slide the crosshair across
 the series on touch — no lift-and-tap — while mouse hover scrubs as before.
 
+Lower on the dashboard, **Asset history** reuses the same cached price-history
+inputs but renders a separate no-card, edge-to-edge multi-line graph. It defaults
+to **All** (one total-assets line) and can split the same series by the asset
+ledger dimensions: Institution, Ticker, Account Type, Vehicle (`Category`), or
+Vehicle Category (`Subcategory`). Each grouped line is anchored to that group's
+current ledger asset total, with unpriced holdings flat on top just like the
+hero chart. The range chips share `ui.historyRange`, so changing 24H/1W/etc.
+keeps the hero and grouped charts in sync.
+
 Data comes from the same two keyless sources as live pricing, one request per
 ticker per range (`Prices.history` / `Prices.historyMany`,
 specs in `Prices.HISTORY_RANGES`):

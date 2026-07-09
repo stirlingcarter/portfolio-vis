@@ -34,6 +34,7 @@ function extractMediaBlock(query) {
 }
 
 assert.match(indexSource, /id="history-chart"/, "history chart container exists");
+assert.match(indexSource, /id="group-history-chart"/, "grouped history chart container exists");
 assert.match(indexSource, /id="proj-chart"/, "projection chart container exists");
 assert.match(indexSource, /id="ledger-table-wrap"/, "ledger table container exists");
 
@@ -63,6 +64,11 @@ const historyChartRule = extractCssRule(stylesSource, ".history-chart");
 assert.match(historyChartRule, /width:\s*100vw/, "history chart spans exactly the viewport width");
 assert.match(historyChartRule, /max-width:\s*100vw/, "history chart never exceeds the viewport width");
 assert.match(historyChartRule, /margin-inline:\s*calc\(50% - 50vw\)/, "history chart bleed is centered, not additive");
+
+const groupedHistoryChartRule = extractCssRule(stylesSource, ".group-history-chart");
+assert.match(groupedHistoryChartRule, /width:\s*100vw/, "grouped history chart spans exactly the viewport width");
+assert.match(groupedHistoryChartRule, /max-width:\s*100vw/, "grouped history chart never exceeds the viewport width");
+assert.match(groupedHistoryChartRule, /margin-inline:\s*calc\(50% - 50vw\)/, "grouped history chart bleed is centered, not additive");
 
 const mobileHistoryChartRule = extractCssRule(mobileBlock, ".history-chart");
 assert.match(mobileHistoryChartRule, /overflow:\s*hidden/, "mobile history chart clips decorative SVG bleed");
