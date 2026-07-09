@@ -18,13 +18,16 @@ assert.match(indexSource, /id="history-ranges"/, "range selector container exist
 assert.match(indexSource, /id="group-history-section"/, "grouped history section exists");
 assert.match(indexSource, /id="group-history-groups"/, "grouped history selector exists");
 assert.match(indexSource, /id="group-history-ranges"/, "grouped history range selector exists");
+assert.match(indexSource, /id="group-history-only-largest" checked/, "grouped history only-largest toggle defaults on in markup");
 assert.match(uiSource, /renderHistorySection\(\);/, "renderAll draws the history section");
 assert.match(uiSource, /renderGroupedHistorySection\(\);/, "renderAll draws the grouped history section");
 assert.match(uiSource, /coldledger\.history\.v1/, "history cache uses its own storage key");
 assert.match(uiSource, /historyRange: coerceHistoryRange\(ui\.historyRange\)/, "selected range persists with UI state");
 assert.match(uiSource, /historyGroupBy: coerceHistoryGroupBy\(ui\.historyGroupBy\)/, "selected grouped-history split persists with UI state");
+assert.match(uiSource, /historyOnlyLargest: ui\.historyOnlyLargest !== false/, "only-largest grouped-history toggle persists with UI state");
 assert.match(uiSource, /const HISTORY_GROUP_DIMS = \["Institution", "Ticker", "Account Type", "Category", "Subcategory"\]/, "grouped history exposes requested asset dimensions");
 assert.match(uiSource, /const HISTORY_GROUP_ALL = "__all__"/, "grouped history defaults to All");
+assert.match(uiSource, /const HISTORY_GROUP_LARGEST_RATIO = \.08/, "grouped history hides lines below eight percent of largest current value");
 assert.match(indexSource, /Total assets value history/, "history section is labeled as total assets value");
 assert.match(indexSource, /plus other assets held flat at current value/, "history note explains the flat add-on");
 assert.match(uiSource, /<span class="tt-k">total assets<\/span> <span><\/span>/, "history tooltip skeleton reports total assets");
@@ -36,6 +39,8 @@ assert.match(uiSource, /series\.values = series\.values\.map\(v => v \+ headline
 assert.match(uiSource, /function drawGroupedHistoryChart\(container, legend, lines, spec\)/, "grouped history has its own chart renderer");
 assert.match(uiSource, /class: "chart-svg group-history-chart-svg"/, "grouped history uses its own edge-to-edge SVG class");
 assert.match(uiSource, /groupedHistoryLineSeries/, "grouped history builds one line per selected group");
+assert.match(uiSource, /visibleGroupedHistoryLines/, "grouped history filters small lines as a presentation step");
+assert.match(uiSource, /groupedHistorySeries\(seriesByTicker, spec, ui\.historyGroupBy, asOf\)/, "all grouped-history lines reuse one cached ticker-history map");
 assert.match(uiSource, /function historyValueDomain\(values\)/, "history chart uses an explicit y-domain helper");
 assert.match(uiSource, /const HISTORY_CHART_GEOMETRY = Object\.freeze\(\{[\s\S]*?padLeft: 0,\s*padRight: 0,[\s\S]*?\}\);/, "history chart has no horizontal padding (full-bleed line)");
 assert.match(uiSource, /const plotBottom = H - padB;/, "history plot bottom is derived from SVG geometry");

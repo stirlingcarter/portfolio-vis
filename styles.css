@@ -1211,6 +1211,13 @@ input[type="range"]::-moz-range-thumb {
 .group-history-groups {
   max-width: min(100%, 740px);
 }
+.group-history-largest-toggle {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+}
+.group-history-largest-toggle .t-label {
+  font-size: clamp(.64rem, 1.2vw, .68rem);
+}
 .group-history-chart {
   position: relative;
   z-index: 1;
@@ -2593,6 +2600,9 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   }
   .group-history-groups {
     justify-content: flex-start;
+  }
+  .group-history-largest-toggle {
+    align-self: flex-start;
   }
   .group-history-chart .chart-svg {
     min-width: 0;

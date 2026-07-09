@@ -65,6 +65,7 @@
   const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
   const HISTORY_GROUP_ALL = "__all__";
   const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
+  const HISTORY_GROUP_LARGEST_RATIO = .08;
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
@@ -101,7 +102,8 @@
     ledgerGroupBy: "Institution",
     lastPriceRefreshAt: 0,
     historyRange: "24h",    // holdings-history look-back (keys in Prices.HISTORY_RANGES)
-    historyGroupBy: HISTORY_GROUP_ALL
+    historyGroupBy: HISTORY_GROUP_ALL,
+    historyOnlyLargest: true
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -375,6 +377,7 @@
     if ("heroMetric" in state) ui.heroMetric = heroMetricFor(state.heroMetric).key;
     if ("historyRange" in state) ui.historyRange = coerceHistoryRange(state.historyRange);
     if ("historyGroupBy" in state) ui.historyGroupBy = coerceHistoryGroupBy(state.historyGroupBy);
+    if ("historyOnlyLargest" in state) ui.historyOnlyLargest = state.historyOnlyLargest !== false;
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
@@ -407,6 +410,7 @@
       heroMetric: heroMetricFor(ui.heroMetric).key,
       historyRange: coerceHistoryRange(ui.historyRange),
       historyGroupBy: coerceHistoryGroupBy(ui.historyGroupBy),
+      historyOnlyLargest: ui.historyOnlyLargest !== false,
       biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
@@ -3302,6 +3306,14 @@
     });
   }
 
+  function syncGroupedHistoryLargestToggle() {
+    const toggle = $("#group-history-only-largest");
+    if (!toggle) return;
+    toggle.checked = ui.historyOnlyLargest !== false;
+    const label = $("#group-history-only-largest-label");
+    if (label) label.textContent = toggle.checked ? "Only largest" : "Show all";
+  }
+
   function historyGroupValue(inv, groupBy) {
     if (groupBy === HISTORY_GROUP_ALL) return "All assets";
     if (groupBy === "Ticker") return String(inv.Ticker || "—").trim().toUpperCase() || "—";
@@ -3352,6 +3364,17 @@
       .map(([key, groupAssets]) => groupedHistoryLineSeries(seriesByTicker, spec, groupBy, key, groupAssets, asOf))
       .filter(s => Math.abs(s.current) > .005)
       .sort((a, b) => Math.abs(b.current) - Math.abs(a.current));
+  }
+
+  function visibleGroupedHistoryLines(lines, groupBy) {
+    if (groupBy === HISTORY_GROUP_ALL || ui.historyOnlyLargest === false || lines.length <= 1) {
+      return { visible: lines, hidden: [] };
+    }
+    const largest = Math.max(...lines.map(s => Math.abs(s.current)));
+    if (!Number.isFinite(largest) || largest <= 0) return { visible: lines, hidden: [] };
+    const threshold = largest * HISTORY_GROUP_LARGEST_RATIO;
+    const visible = lines.filter(s => Math.abs(s.current) >= threshold);
+    return { visible: visible.length ? visible : lines.slice(0, 1), hidden: lines.filter(s => Math.abs(s.current) < threshold) };
   }
 
   function drawGroupedHistoryChart(container, legend, lines, spec) {
@@ -3457,6 +3480,7 @@
     ui.historyGroupBy = coerceHistoryGroupBy(ui.historyGroupBy);
     renderGroupedHistoryRangeChips(spec);
     renderGroupedHistoryGroupChips(ui.historyGroupBy);
+    syncGroupedHistoryLargestToggle();
 
     const seriesByTicker = new Map();
     let asOf = Infinity;
@@ -3474,7 +3498,10 @@
       }
     });
 
+    // One cached ticker-history map powers every grouped line; filtering is a
+    // presentation step after all group series have been derived from that map.
     const lines = groupedHistorySeries(seriesByTicker, spec, ui.historyGroupBy, asOf);
+    const { visible: visibleLines, hidden: hiddenLines } = visibleGroupedHistoryLines(lines, ui.historyGroupBy);
     const chart = $("#group-history-chart");
     const legend = $("#group-history-legend");
     if (!lines.length) {
@@ -3484,10 +3511,14 @@
       ensureHistorySeries();
       return;
     }
-    drawGroupedHistoryChart(chart, legend, lines, spec);
+    drawGroupedHistoryChart(chart, legend, visibleLines, spec);
 
     const flatSyms = [...new Set(lines.flatMap(s => s.excluded.map(inv => String(inv.Ticker || "").trim().toUpperCase()).filter(Boolean)))];
     const notes = [];
+    if (hiddenLines.length) {
+      const largest = Math.max(...lines.map(s => Math.abs(s.current)));
+      notes.push(`Only largest: hiding ${hiddenLines.length} line${hiddenLines.length === 1 ? "" : "s"} below ${Math.round(HISTORY_GROUP_LARGEST_RATIO * 100)}% of ${fmt$(largest)}`);
+    }
     if (flatSyms.length) notes.push(`Held flat at current value (no ${spec.label} history): ${flatSyms.join(", ")}`);
     if (historyFetchKey) notes.push("Loading more price history…");
     setGroupedHistoryStatus(notes.join(" · "));
@@ -3805,11 +3836,13 @@
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
+    const groupHistoryOnlyLargest = $("#group-history-only-largest");
     const privacyToggle = $("#privacy-toggle");
     const themeModeToggle = $("#theme-mode-toggle");
     const projectionControlsPanel = $(".proj-controls-panel");
     syncProjectionControlsToDom();
     syncLedgerGroupingControl();
+    syncGroupedHistoryLargestToggle();
     if (projectionControlsPanel) {
       projectionControlsPanel.addEventListener("toggle", () => {
         ui.projectionControlsOpen = projectionControlsPanel.open;
@@ -3840,6 +3873,13 @@
       saveUiState();
       renderAll();
     });
+    if (groupHistoryOnlyLargest) {
+      groupHistoryOnlyLargest.addEventListener("change", () => {
+        ui.historyOnlyLargest = groupHistoryOnlyLargest.checked;
+        saveUiState();
+        renderGroupedHistorySection();
+      });
+    }
     // Night-mode toggle: dark maps to the native theme; non-dark maps to white.
     if (themeModeToggle) {
       themeModeToggle.addEventListener("click", () => {
