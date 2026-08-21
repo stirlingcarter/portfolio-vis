@@ -1211,7 +1211,14 @@ input[type="range"]::-moz-range-thumb {
 .group-history-groups {
   max-width: min(100%, 740px);
 }
-.group-history-hiding-button {
+.group-history-tools {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.group-history-tool-button {
   flex: 0 0 auto;
   padding: 6px 10px;
   font-family: var(--mono);
@@ -1225,7 +1232,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 999px;
   text-shadow: 0 1px 8px rgba(0,0,0,.55);
 }
-.group-history-hiding-button[aria-pressed="true"] {
+.group-history-tool-button[aria-pressed="true"] {
   color: #fff;
   background: linear-gradient(135deg, rgba(255,255,255,.18), color-mix(in srgb, var(--coin) 46%, transparent));
   border-color: rgba(255,255,255,.28);
@@ -2614,7 +2621,7 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .group-history-groups {
     justify-content: flex-start;
   }
-  .group-history-hiding-button {
+  .group-history-tools {
     align-self: flex-start;
   }
   .group-history-chart .chart-svg {

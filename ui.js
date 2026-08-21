@@ -67,6 +67,7 @@
   const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
   const HISTORY_GROUP_HIDE_STATES = [0, .03, .08, .12, .20];
   const HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD = .08;
+  const HISTORY_NORMALIZE_BASE = 100000;
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
@@ -104,7 +105,8 @@
     lastPriceRefreshAt: 0,
     historyRange: "24h",    // holdings-history look-back (keys in Prices.HISTORY_RANGES)
     historyGroupBy: HISTORY_GROUP_ALL,
-    historyHideThreshold: HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD
+    historyHideThreshold: HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD,
+    historyNormalize: false // Asset history: reindex each line as if $100k was invested
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -200,6 +202,10 @@
   function historyHideLabel(value) {
     const threshold = coerceHistoryHideThreshold(value);
     return threshold <= 0 ? "Hiding off" : `Hiding ${Math.round(threshold * 100)}%`;
+  }
+
+  function coerceHistoryNormalize(value) {
+    return value === true;
   }
 
   function nextBiomeModeKey(key) {
@@ -402,6 +408,7 @@
       // Back-compat for the previous checkbox setting.
       ui.historyHideThreshold = state.historyOnlyLargest === false ? 0 : HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD;
     }
+    if ("historyNormalize" in state) ui.historyNormalize = coerceHistoryNormalize(state.historyNormalize);
     if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
@@ -435,6 +442,7 @@
       historyRange: coerceHistoryRange(ui.historyRange),
       historyGroupBy: coerceHistoryGroupBy(ui.historyGroupBy),
       historyHideThreshold: coerceHistoryHideThreshold(ui.historyHideThreshold),
+      historyNormalize: coerceHistoryNormalize(ui.historyNormalize),
       biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
@@ -3341,6 +3349,17 @@
       : "Show every grouped history line";
   }
 
+  function syncGroupedHistoryNormalizeButton() {
+    const btn = $("#group-history-normalize");
+    if (!btn) return;
+    ui.historyNormalize = coerceHistoryNormalize(ui.historyNormalize);
+    btn.textContent = ui.historyNormalize ? "Normalized" : "Normalize";
+    btn.setAttribute("aria-pressed", String(ui.historyNormalize));
+    btn.title = ui.historyNormalize
+      ? "Showing each line as if $100,000 was invested at the start of the range"
+      : "Reindex each line as if $100,000 was invested (compare performance across scales)";
+  }
+
   function historyGroupValue(inv, groupBy) {
     if (groupBy === HISTORY_GROUP_ALL) return "All assets";
     if (groupBy === "Ticker") return String(inv.Ticker || "—").trim().toUpperCase() || "—";
@@ -3394,6 +3413,11 @@
   }
 
   function visibleGroupedHistoryLines(lines, groupBy) {
+    // Size-based hiding fights the point of normalize mode: small holdings
+    // should stay visible so their performance can be compared to large ones.
+    if (coerceHistoryNormalize(ui.historyNormalize)) {
+      return { visible: lines, hidden: [] };
+    }
     const thresholdRatio = coerceHistoryHideThreshold(ui.historyHideThreshold);
     if (groupBy === HISTORY_GROUP_ALL || thresholdRatio <= 0 || lines.length <= 1) {
       return { visible: lines, hidden: [] };
@@ -3403,6 +3427,27 @@
     const threshold = largest * thresholdRatio;
     const visible = lines.filter(s => Math.abs(s.current) >= threshold);
     return { visible: visible.length ? visible : lines.slice(0, 1), hidden: lines.filter(s => Math.abs(s.current) < threshold) };
+  }
+
+  function normalizeGroupedHistoryLines(lines) {
+    return lines.map(series => {
+      const start = series.values.find(v => Number.isFinite(v) && Math.abs(v) > .005);
+      if (start == null) {
+        return {
+          ...series,
+          values: series.values.map(() => HISTORY_NORMALIZE_BASE),
+          current: HISTORY_NORMALIZE_BASE,
+          normalized: true
+        };
+      }
+      const values = series.values.map(v => (Number.isFinite(v) ? (v / start) * HISTORY_NORMALIZE_BASE : HISTORY_NORMALIZE_BASE));
+      return {
+        ...series,
+        values,
+        current: values[values.length - 1],
+        normalized: true
+      };
+    });
   }
 
   function drawGroupedHistoryChart(container, legend, lines, spec) {
@@ -3416,12 +3461,15 @@
     const N = lines[0].values.length - 1;
     const x = i => padL + (i / N) * iw;
     const y = v => padT + ih - ((v - yLo) / (yHi - yLo)) * ih;
+    const normalized = lines.some(s => s.normalized);
 
     const svg = svgEl("svg", {
       viewBox: `0 0 ${W} ${H}`,
       class: "chart-svg group-history-chart-svg",
       role: "img",
-      "aria-label": `Total assets history grouped over the past ${spec.label}`
+      "aria-label": normalized
+        ? `Normalized $100,000 asset history grouped over the past ${spec.label}`
+        : `Total assets history grouped over the past ${spec.label}`
     });
     const lineLayer = svgEl("g", { class: "group-history-line-layer" });
     svg.appendChild(lineLayer);
@@ -3468,7 +3516,8 @@
         const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
         return `<br><span class="tt-mark" style="color:${color}">●</span><span class="tt-k">${series.label}</span> ${fmt$full(series.values[i])}`;
       }).join("");
-      showTip(`<b>${fmtHistoryTime(lines[0].times[i], spec, true)}</b>${rows}${lines.length > 8 ? "<br><span class='tt-k'>…</span>" : ""}`, clientX, clientY);
+      const basis = normalized ? "<br><span class='tt-k'>$100k invested</span>" : "";
+      showTip(`<b>${fmtHistoryTime(lines[0].times[i], spec, true)}</b>${basis}${rows}${lines.length > 8 ? "<br><span class='tt-k'>…</span>" : ""}`, clientX, clientY);
     };
     const scrub = e => {
       clientX = e.clientX; clientY = e.clientY;
@@ -3507,8 +3556,16 @@
     const spec = historyRangeSpec();
     ui.historyGroupBy = coerceHistoryGroupBy(ui.historyGroupBy);
     ui.historyHideThreshold = coerceHistoryHideThreshold(ui.historyHideThreshold);
+    ui.historyNormalize = coerceHistoryNormalize(ui.historyNormalize);
+    const note = $("#group-history-note");
+    if (note) {
+      note.textContent = ui.historyNormalize
+        ? "normalized · $100,000 invested in each line"
+        : "same price history · split by ledger tags";
+    }
     renderGroupedHistoryRangeChips(spec);
     renderGroupedHistoryGroupChips(ui.historyGroupBy);
+    syncGroupedHistoryNormalizeButton();
     syncGroupedHistoryHidingButton();
 
     const seriesByTicker = new Map();
@@ -3530,7 +3587,8 @@
     // One cached ticker-history map powers every grouped line; filtering is a
     // presentation step after all group series have been derived from that map.
     const lines = groupedHistorySeries(seriesByTicker, spec, ui.historyGroupBy, asOf);
-    const { visible: visibleLines, hidden: hiddenLines } = visibleGroupedHistoryLines(lines, ui.historyGroupBy);
+    const { visible: sizeVisible, hidden: hiddenLines } = visibleGroupedHistoryLines(lines, ui.historyGroupBy);
+    const visibleLines = ui.historyNormalize ? normalizeGroupedHistoryLines(sizeVisible) : sizeVisible;
     const chart = $("#group-history-chart");
     const legend = $("#group-history-legend");
     if (!lines.length) {
@@ -3544,6 +3602,7 @@
 
     const flatSyms = [...new Set(lines.flatMap(s => s.excluded.map(inv => String(inv.Ticker || "").trim().toUpperCase()).filter(Boolean)))];
     const notes = [];
+    if (ui.historyNormalize) notes.push("Normalized to $100,000 at range start");
     if (hiddenLines.length) {
       const largest = Math.max(...lines.map(s => Math.abs(s.current)));
       notes.push(`Hiding ${Math.round(ui.historyHideThreshold * 100)}%: ${hiddenLines.length} line${hiddenLines.length === 1 ? "" : "s"} below ${fmt$(largest * ui.historyHideThreshold)} (${fmt$(largest)} largest)`);
@@ -3866,11 +3925,13 @@
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
     const groupHistoryHiding = $("#group-history-hiding");
+    const groupHistoryNormalize = $("#group-history-normalize");
     const privacyToggle = $("#privacy-toggle");
     const themeModeToggle = $("#theme-mode-toggle");
     const projectionControlsPanel = $(".proj-controls-panel");
     syncProjectionControlsToDom();
     syncLedgerGroupingControl();
+    syncGroupedHistoryNormalizeButton();
     syncGroupedHistoryHidingButton();
     if (projectionControlsPanel) {
       projectionControlsPanel.addEventListener("toggle", () => {
@@ -3902,6 +3963,13 @@
       saveUiState();
       renderAll();
     });
+    if (groupHistoryNormalize) {
+      groupHistoryNormalize.addEventListener("click", () => {
+        ui.historyNormalize = !coerceHistoryNormalize(ui.historyNormalize);
+        saveUiState();
+        renderGroupedHistorySection();
+      });
+    }
     if (groupHistoryHiding) {
       groupHistoryHiding.addEventListener("click", () => {
         ui.historyHideThreshold = nextHistoryHideThreshold(ui.historyHideThreshold);
