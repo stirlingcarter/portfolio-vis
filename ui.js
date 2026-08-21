@@ -45,6 +45,12 @@
   // Full dollars-and-cents — used in the ledger where exact valuations matter.
   const fmt$cents = v => moneyHidden() ? MONEY_MASK : "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = v => (v * 100).toFixed(1) + "%";
+  // Growth % chart values are already percentage points (e.g. 12.4 for +12.4%).
+  const fmtGrowthPct = v => {
+    if (!Number.isFinite(v)) return "—";
+    const body = v.toFixed(1) + "%";
+    return v > 0 ? "+" + body : body;
+  };
   const fmtLeveragePct = v => Number.isFinite(v) ? fmtPct(v) : "∞%";
   const fmtMultiple = v => Number.isFinite(v) ? v.toFixed(v >= 10 ? 1 : 2) + "x" : "∞x";
   const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
@@ -67,7 +73,6 @@
   const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
   const HISTORY_GROUP_HIDE_STATES = [0, .03, .08, .12, .20];
   const HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD = .08;
-  const HISTORY_NORMALIZE_BASE = 100000;
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
 
   const NON_MARKET = new Set(["cash", "real estate", "loan", "mortgage", "debt"]);
@@ -106,7 +111,7 @@
     historyRange: "24h",    // holdings-history look-back (keys in Prices.HISTORY_RANGES)
     historyGroupBy: HISTORY_GROUP_ALL,
     historyHideThreshold: HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD,
-    historyNormalize: false // Asset history: reindex each line as if $100k was invested
+    historyNormalize: false // Asset history: show % return from range start
   };
 
   const UI_STORAGE_KEY = "coldledger.ui.v1";
@@ -3353,11 +3358,11 @@
     const btn = $("#group-history-normalize");
     if (!btn) return;
     ui.historyNormalize = coerceHistoryNormalize(ui.historyNormalize);
-    btn.textContent = ui.historyNormalize ? "Normalized" : "Normalize";
+    btn.textContent = "Growth %";
     btn.setAttribute("aria-pressed", String(ui.historyNormalize));
     btn.title = ui.historyNormalize
-      ? "Showing each line as if $100,000 was invested at the start of the range"
-      : "Reindex each line as if $100,000 was invested (compare performance across scales)";
+      ? "Showing percent return from the start of the selected range"
+      : "Compare relative growth rates over the selected range (percent return from start)";
   }
 
   function historyGroupValue(inv, groupBy) {
@@ -3413,8 +3418,8 @@
   }
 
   function visibleGroupedHistoryLines(lines, groupBy) {
-    // Size-based hiding fights the point of normalize mode: small holdings
-    // should stay visible so their performance can be compared to large ones.
+    // Size-based hiding fights the point of Growth % mode: small holdings
+    // should stay visible so their return rates can be compared to large ones.
     if (coerceHistoryNormalize(ui.historyNormalize)) {
       return { visible: lines, hidden: [] };
     }
@@ -3430,17 +3435,20 @@
   }
 
   function normalizeGroupedHistoryLines(lines) {
+    // Percent return from the first usable point in the selected range.
+    // Stored as percentage points so the shared y-domain padding stays sensible.
+    // Every line starts at 0% so growth rates are comparable across scales.
     return lines.map(series => {
       const start = series.values.find(v => Number.isFinite(v) && Math.abs(v) > .005);
       if (start == null) {
         return {
           ...series,
-          values: series.values.map(() => HISTORY_NORMALIZE_BASE),
-          current: HISTORY_NORMALIZE_BASE,
+          values: series.values.map(() => 0),
+          current: 0,
           normalized: true
         };
       }
-      const values = series.values.map(v => (Number.isFinite(v) ? (v / start) * HISTORY_NORMALIZE_BASE : HISTORY_NORMALIZE_BASE));
+      const values = series.values.map(v => (Number.isFinite(v) ? ((v / start) - 1) * 100 : 0));
       return {
         ...series,
         values,
@@ -3462,13 +3470,15 @@
     const x = i => padL + (i / N) * iw;
     const y = v => padT + ih - ((v - yLo) / (yHi - yLo)) * ih;
     const normalized = lines.some(s => s.normalized);
+    const formatValue = normalized ? fmtGrowthPct : fmt$full;
+    const formatLegend = normalized ? fmtGrowthPct : fmt$;
 
     const svg = svgEl("svg", {
       viewBox: `0 0 ${W} ${H}`,
       class: "chart-svg group-history-chart-svg",
       role: "img",
       "aria-label": normalized
-        ? `Normalized $100,000 asset history grouped over the past ${spec.label}`
+        ? `Relative growth percent history grouped over the past ${spec.label}`
         : `Total assets history grouped over the past ${spec.label}`
     });
     const lineLayer = svgEl("g", { class: "group-history-line-layer" });
@@ -3514,9 +3524,9 @@
       cross.style.opacity = 1;
       const rows = lines.slice(0, 8).map(series => {
         const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
-        return `<br><span class="tt-mark" style="color:${color}">●</span><span class="tt-k">${series.label}</span> ${fmt$full(series.values[i])}`;
+        return `<br><span class="tt-mark" style="color:${color}">●</span><span class="tt-k">${series.label}</span> ${formatValue(series.values[i])}`;
       }).join("");
-      const basis = normalized ? "<br><span class='tt-k'>$100k invested</span>" : "";
+      const basis = normalized ? "<br><span class='tt-k'>return from range start</span>" : "";
       showTip(`<b>${fmtHistoryTime(lines[0].times[i], spec, true)}</b>${basis}${rows}${lines.length > 8 ? "<br><span class='tt-k'>…</span>" : ""}`, clientX, clientY);
     };
     const scrub = e => {
@@ -3537,7 +3547,7 @@
       lines.slice(0, 12).forEach(series => {
         const color = series.key === "All assets" ? "var(--asset-bright)" : colorFor(`history:${series.key}`);
         const item = el("div", "group-history-legend-item");
-        item.innerHTML = `<span class="swatch" style="background:${color}"></span><span>${series.label}</span><b>${fmt$(series.current)}</b>`;
+        item.innerHTML = `<span class="swatch" style="background:${color}"></span><span>${series.label}</span><b>${formatLegend(series.current)}</b>`;
         legend.appendChild(item);
       });
       if (lines.length > 12) legend.appendChild(el("div", "group-history-legend-more", `+${lines.length - 12} more`));
@@ -3560,7 +3570,7 @@
     const note = $("#group-history-note");
     if (note) {
       note.textContent = ui.historyNormalize
-        ? "normalized · $100,000 invested in each line"
+        ? "relative growth · percent return from range start"
         : "same price history · split by ledger tags";
     }
     renderGroupedHistoryRangeChips(spec);
@@ -3602,7 +3612,7 @@
 
     const flatSyms = [...new Set(lines.flatMap(s => s.excluded.map(inv => String(inv.Ticker || "").trim().toUpperCase()).filter(Boolean)))];
     const notes = [];
-    if (ui.historyNormalize) notes.push("Normalized to $100,000 at range start");
+    if (ui.historyNormalize) notes.push("Growth % from range start");
     if (hiddenLines.length) {
       const largest = Math.max(...lines.map(s => Math.abs(s.current)));
       notes.push(`Hiding ${Math.round(ui.historyHideThreshold * 100)}%: ${hiddenLines.length} line${hiddenLines.length === 1 ? "" : "s"} below ${fmt$(largest * ui.historyHideThreshold)} (${fmt$(largest)} largest)`);

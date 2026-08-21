@@ -273,12 +273,12 @@ to **All** (one total-assets line) and can split the same series by the asset
 ledger dimensions: Institution, Ticker, Account Type, Vehicle (`Category`), or
 Vehicle Category (`Subcategory`). Each grouped line is anchored to that group's
 current ledger asset total, with unpriced holdings flat on top just like the
-hero chart. The **Normalize** toggle reindexes every visible line as if
-**$100,000** had been invested at the start of the selected range, so a small
-holding can be compared to a large one without scale eclipsing relative
-performance; while Normalize is on, size-based line hiding is skipped. The
+hero chart. The **Growth %** toggle reindexes every visible line as
+**percent return from the start of the selected range** (all lines begin at
+0%), so growth rates are comparable across holdings of different sizes without
+dollar scale; while Growth % is on, size-based line hiding is skipped. The
 single **Hiding** button cycles through Off, 3%, 8%, 12%, and 20% thresholds
-(default 8%); when a split is active (and Normalize is off) it hides groups
+(default 8%); when a split is active (and Growth % is off) it hides groups
 whose current value falls below the selected percentage of the largest current
 group, keeping tiny flat lines off the bottom of the graph. The range chips share
 `ui.historyRange`, so changing 24H/1W/etc. keeps the hero and grouped charts in
