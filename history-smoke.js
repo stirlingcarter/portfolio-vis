@@ -16,7 +16,7 @@ const stylesSource = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8")
 assert.match(indexSource, /id="history-section"/, "holdings-history section exists");
 assert.match(indexSource, /id="history-ranges"/, "range selector container exists");
 assert.match(indexSource, /id="group-history-section"/, "grouped history section exists");
-assert.match(indexSource, /id="group-history-groups"/, "grouped history selector exists");
+assert.match(indexSource, /id="group-history-groupby"[\s\S]*All/, "grouped history has a single cycling group-by button");
 assert.match(indexSource, /id="group-history-ranges"/, "grouped history range selector exists");
 assert.match(indexSource, /id="group-history-hiding"[\s\S]*Hiding 8%/, "grouped history has a single Hiding threshold button");
 assert.match(indexSource, /id="group-history-normalize"[\s\S]*Growth %/, "grouped history has a Growth % toggle button");
@@ -29,6 +29,8 @@ assert.match(uiSource, /historyHideThreshold: coerceHistoryHideThreshold\(ui\.hi
 assert.match(uiSource, /historyNormalize: coerceHistoryNormalize\(ui\.historyNormalize\)/, "grouped-history Growth % toggle persists with UI state");
 assert.match(uiSource, /const HISTORY_GROUP_DIMS = \["Institution", "Ticker", "Account Type", "Category", "Subcategory"\]/, "grouped history exposes requested asset dimensions");
 assert.match(uiSource, /const HISTORY_GROUP_ALL = "__all__"/, "grouped history defaults to All");
+assert.match(uiSource, /nextHistoryGroupBy/, "grouped history group-by button cycles through split options");
+assert.match(uiSource, /HISTORY_GROUP_OPTIONS/, "grouped history group-by options include All plus asset dimensions");
 assert.match(uiSource, /const HISTORY_GROUP_HIDE_STATES = \[0, \.03, \.08, \.12, \.20\]/, "grouped history cycles hiding thresholds from off through twenty percent");
 assert.match(uiSource, /const HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD = \.08/, "grouped history defaults to eight percent hiding");
 assert.match(uiSource, /normalizeGroupedHistoryLines/, "grouped history can reindex each line as percent return from range start");

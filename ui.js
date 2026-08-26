@@ -71,6 +71,10 @@
   const LEDGER_GROUP_DIMS = Data.TAG_DIMENSIONS.slice();
   const HISTORY_GROUP_ALL = "__all__";
   const HISTORY_GROUP_DIMS = ["Institution", "Ticker", "Account Type", "Category", "Subcategory"];
+  const HISTORY_GROUP_OPTIONS = [
+    [HISTORY_GROUP_ALL, "All"],
+    ...HISTORY_GROUP_DIMS.map(dim => [dim, dimLabel(dim)])
+  ];
   const HISTORY_GROUP_HIDE_STATES = [0, .03, .08, .12, .20];
   const HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD = .08;
   const MAX_LEDGER_COPIES = Portfolios.maxLedgers ? Portfolios.maxLedgers() : 8;
@@ -163,6 +167,19 @@
   function coerceHistoryGroupBy(value) {
     if (value === HISTORY_GROUP_ALL) return HISTORY_GROUP_ALL;
     return HISTORY_GROUP_DIMS.includes(value) ? value : HISTORY_GROUP_ALL;
+  }
+
+  function nextHistoryGroupBy(value) {
+    const current = coerceHistoryGroupBy(value);
+    const keys = HISTORY_GROUP_OPTIONS.map(([key]) => key);
+    const idx = keys.indexOf(current);
+    return keys[(idx + 1) % keys.length];
+  }
+
+  function historyGroupByLabel(value) {
+    const key = coerceHistoryGroupBy(value);
+    const hit = HISTORY_GROUP_OPTIONS.find(([optionKey]) => optionKey === key);
+    return hit ? hit[1] : "All";
   }
 
   function coerceHistoryHideThreshold(value) {
@@ -2823,23 +2840,18 @@
     });
   }
 
-  function renderGroupedHistoryGroupChips(groupBy) {
-    const wrap = $("#group-history-groups");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    [[HISTORY_GROUP_ALL, "All"], ...HISTORY_GROUP_DIMS.map(dim => [dim, dimLabel(dim)])].forEach(([key, label]) => {
-      const btn = el("button", "history-range-btn", label);
-      btn.type = "button";
-      btn.setAttribute("aria-pressed", String(key === groupBy));
-      btn.title = key === HISTORY_GROUP_ALL ? "Show one total assets line" : `Split lines by ${label}`;
-      btn.addEventListener("click", () => {
-        if (ui.historyGroupBy === key) return;
-        ui.historyGroupBy = key;
-        saveUiState();
-        renderGroupedHistorySection();
-      });
-      wrap.appendChild(btn);
-    });
+  function syncGroupedHistoryGroupButton() {
+    const btn = $("#group-history-groupby");
+    if (!btn) return;
+    ui.historyGroupBy = coerceHistoryGroupBy(ui.historyGroupBy);
+    const label = historyGroupByLabel(ui.historyGroupBy);
+    const nextLabel = historyGroupByLabel(nextHistoryGroupBy(ui.historyGroupBy));
+    btn.textContent = label;
+    btn.setAttribute("aria-pressed", String(ui.historyGroupBy !== HISTORY_GROUP_ALL));
+    btn.title = ui.historyGroupBy === HISTORY_GROUP_ALL
+      ? `Show one total assets line · click for ${nextLabel}`
+      : `Split lines by ${label} · click for ${nextLabel}`;
+    btn.setAttribute("aria-label", `History grouping: ${label}. Activate to show ${nextLabel}.`);
   }
 
   function syncGroupedHistoryHidingButton() {
@@ -3073,7 +3085,7 @@
         : "same price history · split by ledger tags";
     }
     renderGroupedHistoryRangeChips(spec);
-    renderGroupedHistoryGroupChips(ui.historyGroupBy);
+    syncGroupedHistoryGroupButton();
     syncGroupedHistoryNormalizeButton();
     syncGroupedHistoryHidingButton();
 
@@ -3431,6 +3443,7 @@
   function wireControls() {
     const years = $("#years-slider"), monthly = $("#monthly-slider"), simpleRate = $("#simple-rate-slider");
     const simpleMonthly = $("#simple-monthly-input"), simpleMonthlyEnabled = $("#simple-monthly-enabled");
+    const groupHistoryGroupBy = $("#group-history-groupby");
     const groupHistoryHiding = $("#group-history-hiding");
     const groupHistoryNormalize = $("#group-history-normalize");
     const privacyToggle = $("#privacy-toggle");
@@ -3465,6 +3478,13 @@
       saveUiState();
       renderAll();
     });
+    if (groupHistoryGroupBy) {
+      groupHistoryGroupBy.addEventListener("click", () => {
+        ui.historyGroupBy = nextHistoryGroupBy(ui.historyGroupBy);
+        saveUiState();
+        renderGroupedHistorySection();
+      });
+    }
     if (groupHistoryNormalize) {
       groupHistoryNormalize.addEventListener("click", () => {
         ui.historyNormalize = !coerceHistoryNormalize(ui.historyNormalize);
