@@ -98,12 +98,10 @@
     simpleMonthly: 0,
     simpleMonthlyEnabled: false,
     heroMetric: "net",
-    biomeMode: "cards",
     privacyMode: false,
     contribIds: new Set(),
     contribAmounts: new Map(), // exact monthly dollars per selected position after user edits
     contribTouched: false,  // once the user picks targets, stop auto-selecting new ones
-    floatPositions: new Map(), // saved free-floating terrarium positions by holding ID
     editingId: null,        // ledger row currently being edited in place (or null)
     ledgerSort: "ID",
     ledgerGroupBy: "Institution",
@@ -126,30 +124,13 @@
     { key: "assets", label: "assets", value: () => Data.assetTotal(ui.taxOn) },
     { key: "debt", label: "debt", value: () => Data.debtTotal(ui.taxOn) }
   ];
+  // Earth orbit visualization is kept but turned off (section is hidden in HTML).
+  const EARTH_VIEW_ENABLED = false;
   // Coherent app themes — palettes live in styles.css under html[data-theme=…].
   // "dark" is the original petrol/brass identity and needs no attribute overrides.
   const THEMES = ["dark", "white", "sand", "pink"];
   const LIGHT_TOGGLE_THEME = "white";
   const coerceTheme = value => THEMES.includes(value) ? value : "dark";
-
-  const BIOME_MODES = ["cards", "float", "pens"];
-  const BIOME_MODE_META = {
-    cards: {
-      label: "card layout",
-      note: "Holdings",
-      aria: "Holdings"
-    },
-    float: {
-      label: "free-floating garden",
-      note: "Holdings",
-      aria: "Holdings"
-    },
-    pens: {
-      label: "institution pens",
-      note: "Institutions",
-      aria: "by institution"
-    }
-  };
 
   function heroMetricFor(key) {
     return HERO_METRICS.find(metric => metric.key === key) || HERO_METRICS[0];
@@ -164,13 +145,6 @@
     if (key === "assets") return "var(--assets, var(--asset))";
     if (key === "debt") return "var(--debt, var(--danger))";
     return "var(--net, var(--net-worth, #a78bfa))";
-  }
-
-  function coerceBiomeMode(value) {
-    if (BIOME_MODES.includes(value)) return value;
-    if (value === "free" || value === "floating") return "float";
-    if (value === "institution" || value === "institutions" || value === "inst" || value === "pen") return "pens";
-    return "cards";
   }
 
   function coerceProjectionView(value) {
@@ -211,12 +185,6 @@
 
   function coerceHistoryNormalize(value) {
     return value === true;
-  }
-
-  function nextBiomeModeKey(key) {
-    const mode = coerceBiomeMode(key);
-    const idx = BIOME_MODES.indexOf(mode);
-    return BIOME_MODES[(idx + 1) % BIOME_MODES.length];
   }
 
   function rangeValue(raw, spec) {
@@ -313,10 +281,6 @@
     ui.contribAmounts.clear();
   }
 
-  function resetFloatPositionState() {
-    ui.floatPositions.clear();
-  }
-
   function serializeContributionState() {
     const amounts = {};
     ui.contribAmounts.forEach((value, id) => {
@@ -349,46 +313,6 @@
     }
   }
 
-  function serializeFloatPositionState() {
-    const positions = {};
-    ui.floatPositions.forEach((pos, id) => {
-      const x = Number(pos && pos.x);
-      const y = Number(pos && pos.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      positions[String(id)] = {
-        x: Number(clamp(x, 0, 100).toFixed(2)),
-        y: Number(clamp(y, 0, 100).toFixed(2))
-      };
-    });
-    return positions;
-  }
-
-  function applyFloatPositionState(raw) {
-    resetFloatPositionState();
-    const positions = raw && typeof raw === "object" && raw.floatPositions && typeof raw.floatPositions === "object"
-      ? raw.floatPositions
-      : null;
-    if (!positions) return;
-    Object.entries(positions).forEach(([id, pos]) => {
-      const nId = Number(id);
-      const x = Number(pos && pos.x);
-      const y = Number(pos && pos.y);
-      if (!Number.isFinite(nId) || !Number.isFinite(x) || !Number.isFinite(y)) return;
-      ui.floatPositions.set(nId, { x: clamp(x, 0, 100), y: clamp(y, 0, 100) });
-    });
-  }
-
-  function pruneFloatPositions(liveIds) {
-    let changed = false;
-    [...ui.floatPositions.keys()].forEach(id => {
-      if (!liveIds.has(id)) {
-        ui.floatPositions.delete(id);
-        changed = true;
-      }
-    });
-    return changed;
-  }
-
   function loadStoredProjectionState() {
     const state = readUiStorage();
     const projection = state.projection;
@@ -414,7 +338,6 @@
       ui.historyHideThreshold = state.historyOnlyLargest === false ? 0 : HISTORY_GROUP_DEFAULT_HIDE_THRESHOLD;
     }
     if ("historyNormalize" in state) ui.historyNormalize = coerceHistoryNormalize(state.historyNormalize);
-    if ("biomeMode" in state) ui.biomeMode = coerceBiomeMode(state.biomeMode);
     if ("privacyMode" in state) ui.privacyMode = state.privacyMode === true;
     if ("lastPriceRefreshAt" in state) ui.lastPriceRefreshAt = timestampValue(state.lastPriceRefreshAt);
     if ("theme" in state) ui.theme = coerceTheme(state.theme);
@@ -426,7 +349,6 @@
     const byPortfolio = state.portfolios && typeof state.portfolios === "object" ? state.portfolios : {};
     const portfolioState = activeId ? byPortfolio[activeId] : null;
     applyContributionState(portfolioState);
-    applyFloatPositionState(portfolioState);
   }
 
   function saveUiState() {
@@ -448,7 +370,6 @@
       historyGroupBy: coerceHistoryGroupBy(ui.historyGroupBy),
       historyHideThreshold: coerceHistoryHideThreshold(ui.historyHideThreshold),
       historyNormalize: coerceHistoryNormalize(ui.historyNormalize),
-      biomeMode: coerceBiomeMode(ui.biomeMode),
       theme: coerceTheme(ui.theme),
       privacyMode: ui.privacyMode === true,
       lastPriceRefreshAt: timestampValue(ui.lastPriceRefreshAt),
@@ -457,8 +378,7 @@
     const activeId = activePortfolioId();
     if (activeId) {
       next.portfolios[activeId] = {
-        ...serializeContributionState(),
-        floatPositions: serializeFloatPositionState()
+        ...serializeContributionState()
       };
     }
     writeUiStorage(next);
@@ -520,7 +440,6 @@
     syncThemeToDom();
     syncProjectionControlsOpenToDom();
     syncProjectionModeToDom();
-    syncBiomeModeToDom();
   }
 
   function syncProjectionControlsOpenToDom() {
@@ -556,22 +475,6 @@
     if (note) note.textContent = simple
       ? "aggregate assets/debt"
       : "hover for detail";
-  }
-
-  function syncBiomeModeToDom() {
-    ui.biomeMode = coerceBiomeMode(ui.biomeMode);
-    const mode = ui.biomeMode;
-    const meta = BIOME_MODE_META[mode];
-    const nextMeta = BIOME_MODE_META[nextBiomeModeKey(mode)];
-    const whistle = $("#biome-whistle");
-    if (whistle) {
-      whistle.dataset.mode = mode;
-      whistle.setAttribute("aria-pressed", String(mode !== "cards"));
-      whistle.title = `${meta.label} · switch to ${nextMeta.label}`;
-      whistle.setAttribute("aria-label", `Terrarium layout: ${meta.label}. Activate to switch to ${nextMeta.label}.`);
-    }
-    const note = $("#biome-mode-note");
-    if (note) note.textContent = meta.note;
   }
 
   function syncPrivacyControlToDom() {
@@ -655,7 +558,7 @@
         el("span", "", fmt$cents(values.monthly))
       );
     }
-    renderPlanetMetricEcho(metric, next, value, amount);
+    if (EARTH_VIEW_ENABLED) renderPlanetMetricEcho(metric, next, value, amount);
   }
 
   /* ---------- tooltip & toast ---------- */
@@ -1081,192 +984,6 @@
   const cleanTag = v => String(v || "—").trim() || "—";
   const ledgerGroupLabel = v => String(v ?? "").trim() || "Unlabeled";
   const invMagnitude = inv => Data.presentValue(inv, ui.taxOn);
-  const terrariumCategory = inv => cleanTag(inv.Category).toLowerCase();
-  const terrariumSubcategory = inv => cleanTag(inv.Subcategory).toLowerCase();
-  const terrariumTicker = inv => cleanTag(inv.Ticker).toUpperCase();
-  const CRYPTO_TICKERS = new Set(["BTC", "ETH", "SOL", "ADA", "DOGE", "DOT", "LINK", "AVAX", "MATIC", "LTC", "BCH", "XRP"]);
-  const isCryptoLike = inv => {
-    const category = terrariumCategory(inv);
-    const subcategory = terrariumSubcategory(inv);
-    const ticker = terrariumTicker(inv);
-    return inv.Kind !== "Debt" && (
-      category.includes("crypto") || category.includes("coin") ||
-      subcategory.includes("crypto") || subcategory.includes("coin") ||
-      CRYPTO_TICKERS.has(ticker)
-    );
-  };
-  const isCashLike = inv => {
-    const category = terrariumCategory(inv);
-    const subcategory = terrariumSubcategory(inv);
-    const ticker = terrariumTicker(inv);
-    return inv.Kind !== "Debt" && (
-      category.includes("cash") || subcategory.includes("cash") || ticker === "USD"
-    );
-  };
-  const isGoldLike = inv => {
-    return isCryptoLike(inv) || isCashLike(inv);
-  };
-  const terrariumColorFor = inv => {
-    if (inv.Kind === "Debt") return "var(--danger)";
-    if (isGoldLike(inv)) return "var(--coin)";
-    return "var(--asset)";
-  };
-  const shapeFor = inv => {
-    const category = terrariumCategory(inv);
-    if (inv.Kind === "Debt") return "debt";
-    if (isGoldLike(inv)) return "nugget";
-    if (category.includes("bond")) return "crystal";
-    if (category.includes("real") || category.includes("stock") || category.includes("fund")) return "plant";
-    return "vehicle";
-  };
-  const stableUnit = (seed, salt) => {
-    const n = Number(seed) || 0;
-    const x = Math.sin((n + 1) * 12.9898 + salt * 78.233) * 43758.5453;
-    return x - Math.floor(x);
-  };
-  const FLOAT_STAGE = { w: 1000, h: 620 };
-  const floatSizeFor = (value, max) => clamp(56 + Math.sqrt(value / max) * 88, 56, 144);
-  const cardEntitySizeFor = (value, max) => clamp(66 + Math.sqrt(value / max) * 96, 66, 162);
-  const penEntitySizeFor = (value, max) => clamp(50 + Math.sqrt(value / max) * 62, 50, 112);
-  function institutionPenLayoutFor(inst, max) {
-    const holdings = inst.holdings && inst.holdings.length ? inst.holdings : [];
-    const count = Math.max(holdings.length || inst.count || 0, 1);
-    const sizes = holdings.map(inv => penEntitySizeFor(invMagnitude(inv), max));
-    const largest = Math.max(...sizes, 50);
-
-    if (count === 1) {
-      return {
-        kind: "single",
-        span: 1,
-        width: Math.round(clamp(largest * 1.28 + 54, 132, 198)),
-        minHeight: Math.round(clamp(largest + 108, 166, 220)),
-        cardMinHeight: Math.round(clamp(largest + 76, 126, 180)),
-        yardMin: Math.round(clamp(largest * .78 + 36, 74, 124))
-      };
-    }
-
-    const columns = clamp(Math.ceil(Math.sqrt(count * 1.35)), 2, 4);
-    const rows = Math.ceil(count / columns);
-    const span = clamp(columns + (largest > 92 ? 1 : 0), 2, 5);
-    return {
-      kind: "multi",
-      span,
-      minHeight: Math.round(clamp(86 + rows * 154, 220, 560)),
-      cardMinHeight: 148,
-      yardMin: 74
-    };
-  }
-  function floatEdgesFor(size, bounds) {
-    const width = bounds && bounds.width ? bounds.width : FLOAT_STAGE.w;
-    const height = bounds && bounds.height ? bounds.height : FLOAT_STAGE.h;
-    return {
-      x: clamp((size * .48 / width) * 100, 5, 18),
-      y: clamp((size * .58 / height) * 100, 8, 24)
-    };
-  }
-
-  function clampFloatPosition(x, y, size, bounds) {
-    const edges = floatEdgesFor(size, bounds);
-    const rawX = Number.isFinite(Number(x)) ? Number(x) : 50;
-    const rawY = Number.isFinite(Number(y)) ? Number(y) : 50;
-    return {
-      x: Number(clamp(rawX, edges.x, 100 - edges.x).toFixed(2)),
-      y: Number(clamp(rawY, edges.y, 100 - edges.y).toFixed(2))
-    };
-  }
-
-  function saveFloatPosition(id, x, y, size, bounds) {
-    const nId = Number(id);
-    if (!Number.isFinite(nId)) return;
-    ui.floatPositions.set(nId, clampFloatPosition(x, y, size, bounds));
-    saveUiState();
-  }
-
-  function applyStoredFloatPositions(layout, invs) {
-    let changed = false;
-    invs.forEach(inv => {
-      const saved = ui.floatPositions.get(inv.ID);
-      const pos = layout.get(inv.ID);
-      if (!saved || !pos) return;
-      const clamped = clampFloatPosition(saved.x, saved.y, pos.size);
-      if (clamped.x !== saved.x || clamped.y !== saved.y) {
-        ui.floatPositions.set(inv.ID, clamped);
-        changed = true;
-      }
-      layout.set(inv.ID, { ...pos, x: clamped.x, y: clamped.y });
-    });
-    return changed;
-  }
-
-  function floatLayoutFor(invs, max) {
-    const count = Math.max(invs.length, 1);
-    const cols = Math.ceil(Math.sqrt(count * 1.55));
-    const rows = Math.ceil(count / cols);
-    const slots = [];
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const x = ((col + .5) / cols) * FLOAT_STAGE.w;
-        const y = ((row + .5) / rows) * FLOAT_STAGE.h;
-        slots.push({ x, y, score: Math.hypot(x - FLOAT_STAGE.w / 2, y - FLOAT_STAGE.h / 2) });
-      }
-    }
-    slots.sort((a, b) => a.score - b.score);
-
-    const nodes = invs.map((inv, idx) => {
-      const value = invMagnitude(inv);
-      const size = floatSizeFor(value, max);
-      const slot = slots[idx] || slots[slots.length - 1];
-      const jitterX = (stableUnit(inv.ID, 1) - .5) * Math.min(70, FLOAT_STAGE.w / (cols * 3));
-      const jitterY = (stableUnit(inv.ID, 2) - .5) * Math.min(52, FLOAT_STAGE.h / (rows * 3));
-      const radius = Math.max(38, size * .42);
-      return {
-        inv,
-        size,
-        radius,
-        x: clamp(slot.x + jitterX, radius, FLOAT_STAGE.w - radius),
-        y: clamp(slot.y + jitterY, radius, FLOAT_STAGE.h - radius),
-        rot: -7 + stableUnit(inv.ID, 3) * 14,
-        delay: -stableUnit(inv.ID, 4) * 5
-      };
-    });
-
-    for (let pass = 0; pass < 72; pass++) {
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          let dist = Math.hypot(dx, dy);
-          if (dist < .001) {
-            dx = stableUnit(a.inv.ID, j + 7) - .5;
-            dy = stableUnit(b.inv.ID, i + 11) - .5;
-            dist = Math.hypot(dx, dy) || 1;
-          }
-          const minDist = a.radius + b.radius + 12;
-          if (dist >= minDist) continue;
-          const push = (minDist - dist) * .5;
-          const nx = dx / dist;
-          const ny = dy / dist;
-          a.x -= nx * push;
-          a.y -= ny * push;
-          b.x += nx * push;
-          b.y += ny * push;
-        }
-      }
-      nodes.forEach(n => {
-        n.x = clamp(n.x, n.radius, FLOAT_STAGE.w - n.radius);
-        n.y = clamp(n.y, n.radius * .8, FLOAT_STAGE.h - n.radius * .75);
-      });
-    }
-
-    return new Map(nodes.map(n => [n.inv.ID, {
-      size: n.size,
-      x: (n.x / FLOAT_STAGE.w) * 100,
-      y: (n.y / FLOAT_STAGE.h) * 100,
-      rot: n.rot,
-      delay: n.delay
-    }]));
-  }
 
   function renderHeroExperience() {
     const stage = $("#hero-visual");
@@ -1320,221 +1037,6 @@
       orbit.appendChild(n);
     });
     stage.appendChild(orbit);
-  }
-
-  function entityMarkup(shape) {
-    if (shape === "debt") return `<div class="entity debt"><span class="stone"></span></div>`;
-    if (shape === "nugget") return `<div class="entity nugget"><span class="nugget-body"></span><span class="nugget-shine"></span></div>`;
-    if (shape === "crystal") return `<div class="entity crystal"><span class="facet"></span></div>`;
-    if (shape === "vehicle") {
-      return `<div class="entity vehicle"><span class="body"></span><span class="cab"></span><span class="wheel a"></span><span class="wheel b"></span></div>`;
-    }
-    return `<div class="entity plant"><span class="stem"></span><span class="leaf a"></span><span class="leaf b"></span><span class="leaf c"></span></div>`;
-  }
-
-  function wireFloatDrag(card, wrap, holdingId) {
-    card.classList.add("is-draggable");
-    card.addEventListener("pointerdown", e => {
-      if (e.pointerType !== "mouse" || e.button !== 0) return;
-      const bounds = wrap.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) return;
-      e.preventDefault();
-      card.focus({ preventScroll: true });
-      card.setPointerCapture(e.pointerId);
-      card.classList.add("is-dragging");
-      hideTip();
-
-      const start = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        x: parseFloat(card.style.getPropertyValue("--float-x")) || 50,
-        y: parseFloat(card.style.getPropertyValue("--float-y")) || 50,
-        size: parseFloat(card.style.getPropertyValue("--float-size")) || 120
-      };
-      const edges = floatEdgesFor(start.size, bounds);
-
-      const move = moveEvent => {
-        const nextX = start.x + ((moveEvent.clientX - start.clientX) / bounds.width) * 100;
-        const nextY = start.y + ((moveEvent.clientY - start.clientY) / bounds.height) * 100;
-        card.style.setProperty("--float-x", clamp(nextX, edges.x, 100 - edges.x).toFixed(2) + "%");
-        card.style.setProperty("--float-y", clamp(nextY, edges.y, 100 - edges.y).toFixed(2) + "%");
-      };
-      const stop = stopEvent => {
-        card.classList.remove("is-dragging");
-        if (card.hasPointerCapture(stopEvent.pointerId)) card.releasePointerCapture(stopEvent.pointerId);
-        card.removeEventListener("pointermove", move);
-        card.removeEventListener("pointerup", stop);
-        card.removeEventListener("pointercancel", stop);
-        saveFloatPosition(
-          holdingId,
-          parseFloat(card.style.getPropertyValue("--float-x")),
-          parseFloat(card.style.getPropertyValue("--float-y")),
-          start.size,
-          bounds
-        );
-      };
-
-      card.addEventListener("pointermove", move);
-      card.addEventListener("pointerup", stop);
-      card.addEventListener("pointercancel", stop);
-    });
-  }
-
-  function createBiomeEntityCard(inv, idx, max, mode, opts = {}) {
-    const floating = mode === "float";
-    const penned = mode === "pens";
-    const value = invMagnitude(inv);
-    const color = terrariumColorFor(inv);
-    const shape = shapeFor(inv);
-    const card = el("div", [
-      "entity-card",
-      floating ? "float-card" : "",
-      penned ? "pen-card" : ""
-    ].filter(Boolean).join(" "));
-    card.tabIndex = 0;
-    card.setAttribute("role", "img");
-    card.setAttribute("aria-label", `${positionLabel(inv)}, ${cleanTag(inv.Category)}, ${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}, shown as ${shape}`);
-    card.style.setProperty("--entity-color", color);
-    card.style.setProperty("--tilt", (idx % 2 ? "-4deg" : "4deg"));
-    if (floating) {
-      const floatLayout = opts.floatLayout || new Map();
-      const pos = floatLayout.get(inv.ID) || {
-        size: floatSizeFor(value, max),
-        x: 50,
-        y: 50,
-        rot: 0,
-        delay: 0
-      };
-      card.style.setProperty("--float-size", pos.size + "px");
-      card.style.setProperty("--float-x", pos.x.toFixed(2) + "%");
-      card.style.setProperty("--float-y", pos.y.toFixed(2) + "%");
-      card.style.setProperty("--float-rot", pos.rot.toFixed(2) + "deg");
-      card.style.setProperty("--float-delay", pos.delay.toFixed(2) + "s");
-      card.title = "Drag with a mouse to reposition. Position is saved for this portfolio.";
-    }
-    card.innerHTML = `
-      <div class="entity-card-lift">
-        ${entityMarkup(shape)}
-        <div class="entity-ground"></div>
-        <div class="entity-label"><b>${inv.Ticker || "—"}</b><span>${fmt$(value)} · ${penned ? cleanTag(inv["Account Type"]) : cleanTag(inv.Category)}</span></div>
-      </div>`;
-    card.querySelector(".entity").style.setProperty("--h", floating
-      ? "var(--float-size)"
-      : (penned ? penEntitySizeFor(value, max) : cardEntitySizeFor(value, max)) + "px");
-    card.addEventListener("pointerenter", () => card.classList.add("is-hovered"));
-    card.addEventListener("mousemove", e => {
-      if (card.classList.contains("is-dragging")) return;
-      showTip(`<b>${positionLabel(inv)}</b><br><span class="tt-k">${cleanTag(inv.Institution)} · ${cleanTag(inv["Account Type"])}</span><br>${fmt$full(value)}${inv.Kind === "Debt" ? " owed" : ""}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, e.clientX, e.clientY);
-    });
-    const clearHover = () => {
-      card.classList.remove("is-hovered");
-      hideTip();
-    };
-    card.addEventListener("pointerleave", clearHover);
-    card.addEventListener("pointercancel", clearHover);
-    card.addEventListener("focus", () => {
-      card.classList.add("is-focused");
-      const r = card.getBoundingClientRect();
-      showTip(`<b>${positionLabel(inv)}</b><br>${fmt$full(value)} · ${cleanTag(inv.Category)}<br><span class="tt-k">growth</span> ${fmtPct(inv["Nominal Rate"])}`, r.left + r.width / 2, r.top);
-    });
-    card.addEventListener("blur", () => {
-      card.classList.remove("is-focused");
-      hideTip();
-    });
-    if (floating && opts.wrap) wireFloatDrag(card, opts.wrap, inv.ID);
-    return card;
-  }
-
-  function renderBiomePens(wrap, invs, max, totalCount) {
-    const groups = institutionGroups(invs);
-    groups.forEach(inst => {
-      const penLayout = institutionPenLayoutFor(inst, max);
-      const pen = el("section", `institution-pen is-${penLayout.kind}`);
-      pen.setAttribute("aria-label", `${inst.name} pen, net ${fmt$full(inst.netValue)}, ${inst.count} position${inst.count === 1 ? "" : "s"}`);
-      pen.style.setProperty("--pen-span", String(penLayout.span));
-      pen.style.setProperty("--pen-min-height", penLayout.minHeight + "px");
-      pen.style.setProperty("--pen-card-min-height", penLayout.cardMinHeight + "px");
-      pen.style.setProperty("--pen-yard-min", penLayout.yardMin + "px");
-      if (penLayout.width) pen.style.setProperty("--pen-width", penLayout.width + "px");
-      const head = el("div", "institution-pen-head");
-      const title = el("h3", "institution-pen-title", inst.name);
-      title.title = inst.name;
-      head.appendChild(title);
-      head.appendChild(el("span", "institution-pen-meta", `${fmt$(inst.netValue)} net · ${inst.count} pos`));
-      pen.appendChild(head);
-      const yard = el("div", "institution-pen-yard");
-      inst.holdings.forEach((inv, holdingIdx) => {
-        yard.appendChild(createBiomeEntityCard(inv, inst.idx * 100 + holdingIdx, max, "pens"));
-      });
-      pen.appendChild(yard);
-      wrap.appendChild(pen);
-    });
-    if (totalCount > invs.length) wrap.appendChild(el("div", "file-note", `Pens show the ${invs.length} largest holdings · ${totalCount - invs.length} more in the ledger and charts below.`));
-  }
-
-  function renderBiome() {
-    const wrap = $("#biome-view");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    const mode = coerceBiomeMode(ui.biomeMode);
-    const floating = mode === "float";
-    const penned = mode === "pens";
-    wrap.classList.toggle("is-floating", floating);
-    wrap.classList.toggle("is-pens", penned);
-    wrap.classList.toggle("is-terrarium", !floating);
-    wrap.setAttribute("aria-label", BIOME_MODE_META[mode].aria);
-    const invs = Data.all().slice().sort((a, b) => invMagnitude(b) - invMagnitude(a));
-    const max = Math.max(...invs.map(invMagnitude), 1);
-    const visibleInvs = invs.slice(0, 28);
-    const liveIds = new Set(invs.map(inv => inv.ID));
-    let floatStateChanged = pruneFloatPositions(liveIds);
-    const floatLayout = floating ? floatLayoutFor(visibleInvs, max) : new Map();
-    if (floating) floatStateChanged = applyStoredFloatPositions(floatLayout, visibleInvs) || floatStateChanged;
-    if (floatStateChanged) saveUiState();
-    if (penned) {
-      renderBiomePens(wrap, visibleInvs, max, invs.length);
-      return;
-    }
-    visibleInvs.forEach((inv, idx) => {
-      wrap.appendChild(createBiomeEntityCard(inv, idx, max, mode, { floatLayout, wrap }));
-    });
-    if (invs.length > 28) wrap.appendChild(el("div", "file-note", `Showing the 28 largest holdings · ${invs.length - 28} more in the ledger and charts below.`));
-  }
-
-  function institutionGroups(invs) {
-    const groups = new Map();
-    invs.forEach(inv => {
-      const instName = cleanTag(inv.Institution);
-      const acctName = cleanTag(inv["Account Type"]);
-      const value = invMagnitude(inv);
-      if (!groups.has(instName)) {
-        groups.set(instName, { name: instName, value: 0, assetValue: 0, debtValue: 0, netValue: 0, count: 0, accounts: new Map(), holdings: [] });
-      }
-      const inst = groups.get(instName);
-      if (!inst.accounts.has(acctName)) inst.accounts.set(acctName, { name: acctName, value: 0, assetValue: 0, debtValue: 0, netValue: 0, count: 0 });
-      const acct = inst.accounts.get(acctName);
-      const isDebt = inv.Kind === "Debt";
-      inst.value += value;
-      inst.assetValue += isDebt ? 0 : value;
-      inst.debtValue += isDebt ? value : 0;
-      inst.netValue += isDebt ? -value : value;
-      inst.count += 1;
-      inst.holdings.push(inv);
-      acct.value += value;
-      acct.assetValue += isDebt ? 0 : value;
-      acct.debtValue += isDebt ? value : 0;
-      acct.netValue += isDebt ? -value : value;
-      acct.count += 1;
-    });
-
-    const valueSort = (a, b) => (b.value - a.value) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-    const positionSort = (a, b) => (invMagnitude(b) - invMagnitude(a)) || positionLabel(a).localeCompare(positionLabel(b), undefined, { numeric: true, sensitivity: "base" });
-    return [...groups.values()].sort(valueSort).map((inst, idx) => ({
-      ...inst,
-      idx,
-      accounts: [...inst.accounts.values()].sort(valueSort),
-      holdings: inst.holdings.slice().sort(positionSort)
-    }));
   }
 
   /* ---------- ledger table ---------- */
@@ -2333,7 +1835,6 @@
       return;
     }
     resetContributionState();
-    resetFloatPositionState();
     saveUiState();
     renderAll();
     toast("New ledger created");
@@ -2424,7 +1925,6 @@
       return;
     }
     const contributionState = serializeContributionState();
-    const floatPositions = serializeFloatPositionState();
     saveUiState();
     const duplicated = Portfolios.duplicate();
     if (!duplicated) {
@@ -2432,7 +1932,6 @@
       return;
     }
     applyContributionState(contributionState);
-    applyFloatPositionState({ floatPositions });
     saveUiState();
     renderAll();
     toast(`Duplicated → "${Portfolios.activeName()}"`);
@@ -3709,7 +3208,6 @@
       taxOn: ui.taxOn
     });
     syncProjectionModeToDom();
-    syncBiomeModeToDom();
     $("#monthly-out").textContent = fmt$full(ui.monthly) + "/mo";
     $("#simple-rate-out").textContent = fmtPct(ui.simpleRate) + "/yr";
     const simpleMonthlyInput = $("#simple-monthly-input");
@@ -3742,8 +3240,7 @@
     renderAmortizedDebtCosts();
     renderStats(proj, aggregateProj);
     renderProjectionReadout(proj);
-    renderHeroExperience();
-    renderBiome();
+    if (EARTH_VIEW_ENABLED) renderHeroExperience();
     if (ui.projectionView === "simple") {
       aggregateLineChart($("#proj-chart"), aggregateProj);
       renderAggregateProjectionReadout(aggregateProj);
@@ -3965,11 +3462,6 @@
     });
     $("#proj-view-simple").addEventListener("click", () => {
       ui.projectionView = "simple";
-      saveUiState();
-      renderAll();
-    });
-    $("#biome-whistle").addEventListener("click", () => {
-      ui.biomeMode = nextBiomeModeKey(ui.biomeMode);
       saveUiState();
       renderAll();
     });
@@ -4269,7 +3761,6 @@
   function importLedgerRows(name, investments) {
     Portfolios.importCopy(name, investments);
     resetContributionState();
-    resetFloatPositionState();
     saveUiState();
     renderAll();
     toast(`Imported ${Data.all().length} positions into "${Portfolios.activeName()}"`);
@@ -4502,8 +3993,7 @@
         { "ID": 8, "Ticker": "ETH", "Institution": "Coinbase",  "Account Type": "Wallet",    "Kind": "Asset", "Amount": 5,   "Value": 8550,  "Category": "Crypto", "Subcategory": "",              "Nominal Rate": 0.12, "Nominal tax rate": 0.15 }
       ]);
       resetContributionState();
-      resetFloatPositionState();
-      saveUiState();
+        saveUiState();
       renderAll();
       toast("Sample portfolio loaded");
     });

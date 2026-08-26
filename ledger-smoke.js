@@ -62,8 +62,6 @@ assert.match(uiSource, /ledgerGroupBy:\s*"Institution"/, "institution is the no-
 assert.match(uiSource, /const LEDGER_GROUP_DIMS = Data\.TAG_DIMENSIONS\.slice\(\);/, "ledger grouping follows tag dimensions");
 assert.match(uiSource, /Assets \$\{fmt\$full\(assets\)\} · Debts \$\{fmt\$full\(debts\)\} · Net \$\{fmt\$full\(net\)\}/, "ledger summaries show assets, debts, and net");
 assert.match(uiSource, /ledgerGroupBlock\("All positions", rows\)/, "ungrouped ledger keeps the same summary shape");
-assert.match(uiSource, /inst\.netValue \+= isDebt \? -value : value;/, "Holdings institution net subtracts debt values");
-assert.match(uiSource, /institution-pen-meta", `\$\{fmt\$\(inst\.netValue\)\} net/, "Holdings institution readout labels net value");
 assert.match(uiSource, /function assetDebtChart\(container, assets, debts\)/, "sixth chart renders assets and debt");
 assert.match(uiSource, /ASSET_DIMS\.forEach\([\s\S]*?donut\(grid,[\s\S]*?\);[\s\S]*?assetDebtChart\(grid, invested, Data\.debtTotal\(ui\.taxOn\)\);/, "assets/debt chart follows the five invested-asset donuts");
 assert.match(uiSource, /const groupColor = g => g\.color \|\| colorFor\(g\.colorKey \|\| g\.label\);/, "shared donut helper accepts explicit semantic colors");
