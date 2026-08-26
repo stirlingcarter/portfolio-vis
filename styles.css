@@ -1176,16 +1176,6 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   gap: 10px;
 }
-.group-history-groups {
-  max-width: min(100%, 740px);
-  /* Free tag options — no pill backdrop (Asset History only). */
-  padding: 0;
-  border: 0;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border-radius: 0;
-}
 .group-history-tools {
   display: inline-flex;
   flex: 0 0 auto;
@@ -2250,9 +2240,6 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .group-history-head-controls {
     width: 100%;
     align-items: flex-start;
-  }
-  .group-history-groups {
-    justify-content: flex-start;
   }
   .group-history-tools {
     align-self: flex-start;
