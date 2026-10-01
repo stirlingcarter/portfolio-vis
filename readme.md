@@ -326,10 +326,11 @@ The dashboard keeps two totals distinct so they never get conflated:
 
 The Debts section also includes a **Leverage** card. It uses positive debt
 magnitude throughout: margin is `total debt / total assets`, while the displayed
-leverage ratio is `total assets / net worth`. Zero debt is labelled **None**;
-otherwise hardcoded margin thresholds classify the portfolio as **Very Safe**,
-**Safe**, **Normal**, **Moderate**, **Aggressive**, **Very Aggressive**, or
-**Dangerous**.
+leverage ratio is `total assets / net worth` (four decimal places). A capital
+structure bar shows equity vs debt as shares of the asset base. Zero debt is
+labelled **None**; otherwise hardcoded margin thresholds classify the portfolio
+as **Very Safe**, **Safe**, **Normal**, **Moderate**, **Aggressive**,
+**Very Aggressive**, or **Dangerous**.
 
 Positions are labelled `TICKER (Acct)` (`positionLabel` in `ui.js`) wherever a
 single holding is listed (contribution chips, projection layers) so the same

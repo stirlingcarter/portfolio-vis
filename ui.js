@@ -52,7 +52,8 @@
     return v > 0 ? "+" + body : body;
   };
   const fmtLeveragePct = v => Number.isFinite(v) ? fmtPct(v) : "∞%";
-  const fmtMultiple = v => Number.isFinite(v) ? v.toFixed(v >= 10 ? 1 : 2) + "x" : "∞x";
+  // Leverage headline stays precise — four decimals make small shifts visible.
+  const fmtMultiple = v => Number.isFinite(v) ? v.toFixed(4) + "x" : "∞x";
   const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
   const slug = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -3153,6 +3154,19 @@
       .map(level => fmtLeveragePct(level.maxMargin))
       .join(" / ");
 
+    // Capital structure: how assets are financed (equity vs debt). When debt
+    // exceeds assets, equity collapses and the bar reads as fully debt-funded.
+    const structureTotal = Math.max(leverage.assets, leverage.debt, 0);
+    const equityShare = structureTotal > 0 ? clamp(leverage.net / structureTotal, 0, 1) : 1;
+    const debtShare = structureTotal > 0 ? clamp(leverage.debt / structureTotal, 0, 1) : 0;
+    const equityWidth = leverage.net > 0 ? (equityShare * 100).toFixed(1) : "0";
+    const debtWidth = (debtShare * 100).toFixed(1);
+    const structureAria = leverage.net > 0
+      ? `Capital structure: equity ${fmtPct(equityShare)}, debt ${fmtPct(debtShare)}`
+      : leverage.debt > 0
+        ? `Capital structure: debt exceeds assets · net ${fmt$full(leverage.net)}`
+        : "Capital structure: no positions";
+
     wrap.innerHTML = `
       <div class="leverage-headline">
         <div>
@@ -3165,12 +3179,23 @@
         <div class="leverage-fill ${levelClass}" style="width:${(fill * 100).toFixed(1)}%"></div>
         ${markers}
       </div>
+      <div class="leverage-structure">
+        <div class="leverage-k">Capital structure</div>
+        <div class="leverage-structure-bar" role="img" aria-label="${structureAria}">
+          <span class="leverage-structure-equity" style="width:${equityWidth}%"></span>
+          <span class="leverage-structure-debt" style="width:${debtWidth}%"></span>
+        </div>
+        <div class="leverage-structure-legend">
+          <div><span class="swatch equity"></span><span>Equity</span><b>${fmt$full(leverage.net)}</b><em>${fmtPct(equityShare)}</em></div>
+          <div><span class="swatch debt"></span><span>Debt</span><b>${fmt$full(leverage.debt)}</b><em>${fmtPct(debtShare)}</em></div>
+        </div>
+      </div>
       <div class="leverage-metrics">
         <div><span>Margin</span><b>${fmtLeveragePct(leverage.margin)}</b></div>
         <div><span>Debt</span><b>${fmt$full(leverage.debt)}</b></div>
         <div><span>Assets</span><b>${fmt$full(leverage.assets)}</b></div>
       </div>
-      <div class="leverage-note">margin = debt / assets · thresholds ${thresholdKey}${ui.taxOn ? " · post-tax" : ""}</div>`;
+      <div class="leverage-note">margin = debt / assets · equity + debt = assets · thresholds ${thresholdKey}${ui.taxOn ? " · post-tax" : ""}</div>`;
   }
 
   function renderDebts() {

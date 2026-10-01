@@ -1418,6 +1418,82 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--canvas) 45%, transparent);
   transform: translateX(-.5px);
 }
+.leverage-structure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.leverage-structure-bar {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--track);
+  box-shadow: inset 0 1px 10px var(--inset-shadow);
+}
+.leverage-structure-equity,
+.leverage-structure-debt {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  transition: width .18s ease;
+}
+.leverage-structure-equity {
+  background: linear-gradient(90deg, var(--asset), var(--asset-bright));
+}
+.leverage-structure-debt {
+  background: linear-gradient(90deg, var(--rose), var(--danger));
+}
+.leverage-structure-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.leverage-structure-legend > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--well);
+  font-family: var(--mono);
+}
+.leverage-structure-legend .swatch {
+  grid-row: 1 / span 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.leverage-structure-legend .swatch.equity { background: var(--asset-bright); }
+.leverage-structure-legend .swatch.debt { background: var(--danger); }
+.leverage-structure-legend span:not(.swatch) {
+  color: var(--faint);
+  font-size: .56rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.leverage-structure-legend b {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: .78rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leverage-structure-legend em {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--muted);
+  font-style: normal;
+  font-size: .72rem;
+}
 .leverage-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2273,6 +2349,7 @@ tr:hover td { background: color-mix(in srgb, var(--coin) 5%, transparent); }
   .bar-row { grid-template-columns: minmax(0, 1fr) minmax(90px, 1.4fr); gap: 6px 10px; }
   .bar-row .b-val { grid-column: 1 / -1; text-align: left; }
   .leverage-headline { flex-direction: column; }
+  .leverage-structure-legend,
   .leverage-metrics { grid-template-columns: 1fr; }
   .bsheet-row, .bsheet-net { align-items: stretch; flex-direction: column; gap: 8px; }
   .bsheet-row .bs-lbl, .bsheet-net .bs-lbl { flex-basis: auto; }
